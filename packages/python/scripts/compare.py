@@ -4,6 +4,7 @@
     schemes.png              All color schemes, Burkes, tc=0
     algorithms_{NAME}.png    All dither modes for every color scheme and measured palette
     tone_compression.png     Measured palettes: tc=0 | tc=auto | tc=1.0
+    gamut_compression.png    Measured palettes: gc=0 | gc=auto | gc=1.0
 
 Add --docs to also generate images for the README in docs/images/:
     Full resolution in docs/images/
@@ -67,6 +68,16 @@ def tc_str(tc: float | str) -> str:
     return f"tc={tc}"
 
 
+def gc_str(gc: float | str) -> str:
+    if gc == "auto":
+        return "gc=auto"
+    if gc == 1.0 or gc == 1:
+        return "gc=100%"
+    if gc == 0 or gc == 0.0:
+        return "gc=0"
+    return f"gc={gc}"
+
+
 def render(
     src: Image.Image, scheme: object, mode: DitherMode, tc: float | str, gc: float | str = 0.0
 ) -> tuple[Image.Image, float]:
@@ -119,6 +130,7 @@ def run(
     docs: bool,
     docs_algo: str,
     docs_tc: str,
+    docs_gc: str,
     gamut_compression: float | str = 0.0,
 ) -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -174,6 +186,20 @@ def run(
     print()
 
     # ------------------------------------------------------------------
+    # 4. gamut_compression.png — measured palettes, gc=0 | gc=auto | gc=1.0
+    # ------------------------------------------------------------------
+    print("── gamut_compression ────────────────────────")
+    gc_cells: list[tuple[str, Image.Image]] = []
+    for pal_label, palette in MEASURED_PALETTES:
+        for gc_val in [0, "auto", 1.0]:
+            img, t = render(src, palette, DitherMode.BURKES, "auto", gc_val)
+            label = f"{pal_label} · Burkes · {gc_str(gc_val)}"
+            gc_cells.append((label, img))
+            print(f"  {pal_label:<14} {gc_str(gc_val):<10} {t * 1000:>6.0f}ms")
+    save(make_sheet(gc_cells, 3, iw, ih), out_dir / "gamut_compression.png")
+    print()
+
+    # ------------------------------------------------------------------
     # --docs: full-res + 50% thumbnails for the README
     # ------------------------------------------------------------------
     if docs:
@@ -191,17 +217,25 @@ def run(
             print(f"  (note: --docs-algo-palette '{docs_algo}' not found, using '{algo_key}')")
 
         # tone compression: use the requested palette, fall back to first measured
-        tc_palette_names = [name for name, _ in MEASURED_PALETTES]
-        tc_key = docs_tc if docs_tc in tc_palette_names else tc_palette_names[0]
+        measured_palette_names = [name for name, _ in MEASURED_PALETTES]
+        tc_key = docs_tc if docs_tc in measured_palette_names else measured_palette_names[0]
         if tc_key != docs_tc:
             print(f"  (note: --docs-tc-palette '{docs_tc}' not found, using '{tc_key}')")
         tc_cells_docs = [cell for cell in tc_cells if cell[0].startswith(tc_key)]
+
+        # gamut compression: use the requested palette, fall back to first measured
+        gc_key = docs_gc if docs_gc in measured_palette_names else measured_palette_names[0]
+        if gc_key != docs_gc:
+            print(f"  (note: --docs-gc-palette '{docs_gc}' not found, using '{gc_key}')")
+        gc_cells_docs = [cell for cell in gc_cells if cell[0].startswith(gc_key)]
 
         save(make_sheet(scheme_cells, 4, iw, ih), docs_dir / "schemes.png", also_thumb=True)
         save(make_sheet(algo_cells_by_name[algo_key], 3, iw, ih), docs_dir / "algorithms.png", also_thumb=True)
         print(f"     (palette: {algo_key})")
         save(make_sheet(tc_cells_docs, 3, iw, ih), docs_dir / "tone_compression.png", also_thumb=True)
         print(f"     (palette: {tc_key})")
+        save(make_sheet(gc_cells_docs, 3, iw, ih), docs_dir / "gamut_compression.png", also_thumb=True)
+        print(f"     (palette: {gc_key})")
 
 
 def main() -> None:
@@ -222,6 +256,12 @@ def main() -> None:
         help="Palette for docs tone_compression image (default: SOLUM_BWR)",
     )
     parser.add_argument(
+        "--docs-gc-palette",
+        default="SPECTRA_7_3_6COLOR",
+        metavar="NAME",
+        help="Palette for docs gamut_compression image (default: SPECTRA_7_3_6COLOR)",
+    )
+    parser.add_argument(
         "--gamut-compression",
         default="auto",
         metavar="GC",
@@ -237,6 +277,7 @@ def main() -> None:
         args.docs,
         args.docs_algo_palette,
         args.docs_tc_palette,
+        args.docs_gc_palette,
         gc,
     )
 
