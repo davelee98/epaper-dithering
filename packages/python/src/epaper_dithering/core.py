@@ -19,6 +19,7 @@ def dither_image(
     mode: DitherMode = DitherMode.BURKES,
     serpentine: bool = True,
     tone_compression: float | str = "auto",
+    gamut_compression: float = 0.0,
 ) -> Image.Image:
     """Apply dithering to image for e-paper display.
 
@@ -33,6 +34,11 @@ def dither_image(
             "auto" = analyze image histogram and fit to display range.
             0.0 = disabled, 0.0-1.0 = fixed linear compression strength.
             Only applies to measured ColorPalette.
+        gamut_compression: Pre-dithering gamut compression (default: 0.0 = off).
+            Blends out-of-gamut pixels toward their nearest palette color before
+            dithering. Useful for images with highly saturated colors the palette
+            cannot reproduce (e.g. vivid purple on a BWGBRY display).
+            0.0 = disabled, 0.7-0.9 = recommended for typical use.
 
     Returns:
         Dithered palette image matching color scheme
@@ -42,22 +48,23 @@ def dither_image(
     _LOGGER.debug("Applying %s dithering for %s palette", mode.name, scheme_name)
 
     tc = tone_compression
+    gc = gamut_compression
     match mode:
         case DitherMode.NONE:
-            return algorithms.direct_palette_map(image, color_scheme, tc)
+            return algorithms.direct_palette_map(image, color_scheme, tc, gc)
         case DitherMode.ORDERED:
-            return algorithms.ordered_dither(image, color_scheme, tc)
+            return algorithms.ordered_dither(image, color_scheme, tc, gc)
         case DitherMode.FLOYD_STEINBERG:
-            return algorithms.floyd_steinberg_dither(image, color_scheme, serpentine, tc)
+            return algorithms.floyd_steinberg_dither(image, color_scheme, serpentine, tc, gc)
         case DitherMode.ATKINSON:
-            return algorithms.atkinson_dither(image, color_scheme, serpentine, tc)
+            return algorithms.atkinson_dither(image, color_scheme, serpentine, tc, gc)
         case DitherMode.STUCKI:
-            return algorithms.stucki_dither(image, color_scheme, serpentine, tc)
+            return algorithms.stucki_dither(image, color_scheme, serpentine, tc, gc)
         case DitherMode.SIERRA:
-            return algorithms.sierra_dither(image, color_scheme, serpentine, tc)
+            return algorithms.sierra_dither(image, color_scheme, serpentine, tc, gc)
         case DitherMode.SIERRA_LITE:
-            return algorithms.sierra_lite_dither(image, color_scheme, serpentine, tc)
+            return algorithms.sierra_lite_dither(image, color_scheme, serpentine, tc, gc)
         case DitherMode.JARVIS_JUDICE_NINKE:
-            return algorithms.jarvis_judice_ninke_dither(image, color_scheme, serpentine, tc)
+            return algorithms.jarvis_judice_ninke_dither(image, color_scheme, serpentine, tc, gc)
         case _:  # BURKES or fallback
-            return algorithms.burkes_dither(image, color_scheme, serpentine, tc)
+            return algorithms.burkes_dither(image, color_scheme, serpentine, tc, gc)

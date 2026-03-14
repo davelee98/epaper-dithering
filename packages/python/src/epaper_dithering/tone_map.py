@@ -11,6 +11,8 @@ from __future__ import annotations
 
 import numpy as np
 
+from .color_space_lab import rgb_to_lab
+
 # ITU-R BT.709 luminance coefficients (same as sRGB)
 _LUM_R = 0.2126729
 _LUM_G = 0.7151522
@@ -154,6 +156,70 @@ def auto_compress_dynamic_range(
         result[near_black, 0] = black_Y
         result[near_black, 1] = black_Y
         result[near_black, 2] = black_Y
+
+    clipped: np.ndarray = np.clip(result, 0.0, 1.0)
+    return clipped
+
+
+def gamut_compress(
+    pixels_linear: np.ndarray,
+    palette_linear: np.ndarray,
+    strength: float = 1.0,
+) -> np.ndarray:
+    """Blend out-of-gamut pixels toward their nearest palette color.
+
+    Pre-dithering step that reduces colors lying far outside the display's
+    reproducible gamut. Colors near any palette color are left unchanged;
+    colors far outside are blended toward the nearest palette color.
+
+    Useful for images with highly saturated colors the palette cannot reproduce
+    (e.g. vivid purple on a BWGBRY display where the measured red is very dark).
+    Without compression, error diffusion produces a muddy mix of red/blue dots;
+    with compression the result is a controlled, intentional blend.
+
+    Distance is measured in OKLab with the same LCH weighting used for palette
+    matching, so compression is applied where it matters perceptually. Based on
+    the gamut mapping approach of Stone, Cowan & Beatty (ACM TOG 1988).
+
+    Args:
+        pixels_linear: Image in linear RGB, shape (H, W, 3), values in [0, 1].
+        palette_linear: Palette in linear RGB, shape (N, 3).
+        strength: 0.0 = no compression, 1.0 = full blend to nearest palette
+            color for pixels far outside the gamut. Values of 0.7–0.9 are
+            recommended for typical use.
+
+    Returns:
+        Modified pixels_linear array with out-of-gamut colors compressed.
+    """
+    if strength <= 0.0:
+        return pixels_linear
+
+    lab_pixels = rgb_to_lab(pixels_linear)  # (H, W, 3)
+    lab_palette = rgb_to_lab(palette_linear)  # (N, 3)
+
+    # Euclidean OKLab distance to every palette color: (H, W, N)
+    # NOTE: LCH-weighted distance is NOT used here. The LCH hue weight causes
+    # near-achromatic palette colors (black, white) to appear "nearest" to any
+    # saturated pixel because their low chroma produces near-zero hue mismatch.
+    # Plain Euclidean OKLab finds the genuinely closest color by all three
+    # dimensions, so purple correctly maps to blue/red, not to black.
+    diff = lab_pixels[..., np.newaxis, :] - lab_palette[np.newaxis, :, :]  # (H, W, N, 3)
+    dist_sq = np.sum(diff**2, axis=-1)  # (H, W, N)
+
+    # Nearest palette color distance per pixel
+    nearest_idx = np.argmin(dist_sq, axis=-1)  # (H, W)
+    nearest_dist = np.sqrt(np.take_along_axis(dist_sq, nearest_idx[..., np.newaxis], axis=-1).squeeze(-1))  # (H, W)
+
+    # Smoothstep blend factor: 0 inside gamut, ramps to 1 far outside
+    # Threshold chosen in OKLab LCH-weighted space: 0.05 ≈ just-noticeable difference
+    _THRESHOLD = 0.05
+    _THRESHOLD_MAX = 0.20
+    t = np.clip((nearest_dist - _THRESHOLD) / (_THRESHOLD_MAX - _THRESHOLD), 0.0, 1.0)
+    blend_factor = t * t * (3.0 - 2.0 * t) * strength  # smoothstep × strength
+
+    # Blend toward nearest palette color in linear RGB
+    nearest_rgb = palette_linear[nearest_idx]  # (H, W, 3)
+    result = pixels_linear + blend_factor[..., np.newaxis] * (nearest_rgb - pixels_linear)
 
     clipped: np.ndarray = np.clip(result, 0.0, 1.0)
     return clipped
