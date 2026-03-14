@@ -85,15 +85,17 @@ def auto_compress_dynamic_range(
     pixels_linear: np.ndarray,
     palette_linear: np.ndarray,
 ) -> np.ndarray:
-    """Auto-levels dynamic range compression fitted to display capabilities.
+    """Conditionally compress dynamic range to display capabilities.
 
-    Analyzes the image's actual luminance distribution and remaps it to the
-    display's [black_Y, white_Y] range. Uses 2nd/98th percentiles to ignore
-    outliers, maximizing contrast within the display's capabilities.
+    Analyzes the image's actual luminance distribution (2nd/98th percentiles)
+    and only applies compression when the image content genuinely exceeds the
+    display's reproducible range. Images that already fit within the display's
+    [black_Y, white_Y] range are returned unchanged (ICC Black Point
+    Compensation style).
 
-    For full-range images this is equivalent to compress_dynamic_range(..., 1.0).
-    For narrow-range images (e.g., all midtones) this preserves more contrast
-    by stretching the used range to fill the display range.
+    This avoids the over-compression that occurs when unconditionally stretching
+    a well-exposed image to fill the display range — which washes out colors
+    by pushing already-correct highlights above the display white point.
 
     Args:
         pixels_linear: Image in linear RGB, shape (H, W, 3), values in [0, 1].
@@ -121,6 +123,17 @@ def auto_compress_dynamic_range(
     if image_range < 1e-6:
         # Uniform image: fall back to standard linear compression
         return compress_dynamic_range(pixels_linear, palette_linear, 1.0)
+
+    # Only compress if the image content genuinely exceeds the display range.
+    # Allow 10% of display_range as tolerance to avoid compressing images that
+    # merely approach the display limits without meaningfully clipping.
+    TOLERANCE = 0.10
+    fits_shadows = p_low >= black_Y - TOLERANCE * display_range
+    fits_highlights = p_high <= white_Y + TOLERANCE * display_range
+
+    if fits_shadows and fits_highlights:
+        # Image already fits within the display's reproducible range — no change.
+        return pixels_linear
 
     # Remap: [p_low, p_high] → [black_Y, white_Y]
     normalized_Y = (Y - p_low) / image_range
