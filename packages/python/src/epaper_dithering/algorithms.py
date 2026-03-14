@@ -226,9 +226,10 @@ def error_diffusion_dither(
         elif isinstance(tone_compression, float):
             pixels_linear = compress_dynamic_range(pixels_linear, palette_linear, tone_compression)
 
-    # Gamut compression: blend out-of-gamut pixels toward nearest palette color
+    # Gamut compression: auto only for measured palettes; explicit strength works on all
     if gamut_compression == "auto":
-        pixels_linear = auto_gamut_compress(pixels_linear, palette_linear)
+        if isinstance(color_scheme, ColorPalette):
+            pixels_linear = auto_gamut_compress(pixels_linear, palette_linear)
     elif isinstance(gamut_compression, float) and gamut_compression > 0.0:
         pixels_linear = gamut_compress(pixels_linear, palette_linear, gamut_compression)
 
@@ -568,9 +569,10 @@ def direct_palette_map(
         elif isinstance(tone_compression, float):
             pixels_linear = compress_dynamic_range(pixels_linear, palette_linear, tone_compression)
 
-    # Gamut compression: blend out-of-gamut pixels toward nearest palette color
+    # Gamut compression: auto only for measured palettes; explicit strength works on all
     if gamut_compression == "auto":
-        pixels_linear = auto_gamut_compress(pixels_linear, palette_linear)
+        if isinstance(color_scheme, ColorPalette):
+            pixels_linear = auto_gamut_compress(pixels_linear, palette_linear)
     elif isinstance(gamut_compression, float) and gamut_compression > 0.0:
         pixels_linear = gamut_compress(pixels_linear, palette_linear, gamut_compression)
 
@@ -644,9 +646,10 @@ def ordered_dither(
         elif isinstance(tone_compression, float):
             pixels_linear = compress_dynamic_range(pixels_linear, palette_linear, tone_compression)
 
-    # Gamut compression: blend out-of-gamut pixels toward nearest palette color
+    # Gamut compression: auto only for measured palettes; explicit strength works on all
     if gamut_compression == "auto":
-        pixels_linear = auto_gamut_compress(pixels_linear, palette_linear)
+        if isinstance(color_scheme, ColorPalette):
+            pixels_linear = auto_gamut_compress(pixels_linear, palette_linear)
     elif isinstance(gamut_compression, float) and gamut_compression > 0.0:
         pixels_linear = gamut_compress(pixels_linear, palette_linear, gamut_compression)
 

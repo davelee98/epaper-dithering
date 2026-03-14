@@ -69,10 +69,22 @@ _M2 = np.array(
     dtype=np.float64,
 )
 
-# LCH distance weights for dithering
+# LCH distance weights for dithering (tuned for OKLab scale)
+#
+# OKLab: L ∈ [0, 1], C ∈ [0, ~0.4] — very different scale from CIELAB
+# (CIELAB: L ∈ [0, 100], C ∈ [0, ~130]).
+#
+# To maintain the same relative emphasis as the original CIELAB weights
+# (WL=0.5, WC=1.0, WH=2.0), the chroma/hue weights must be scaled up:
+#   CIELAB: effective L range = 100×0.5 = 50, C range = 130×1.0 = 130 → C is 2.6× L
+#   OKLab:  effective L range =   1×0.5 = 0.5, target C = 2.6×0.5 = 1.3 → WC = 1.3/0.4 ≈ 3.0
+#
+# Without this scaling, chroma penalties become negligible in OKLab units,
+# causing achromatic pixels to map to intermediate-L chromatic palette colors
+# (e.g. green at L=0.43) instead of neutral black/white.
 _WL = 0.5  # lightness: de-emphasized (error diffusion compensates)
-_WC = 1.0  # chroma: standard weight
-_WH = 2.0  # hue: emphasized (error diffusion cannot compensate)
+_WC = 3.0  # chroma: scaled up for OKLab's smaller C range [0, ~0.4]
+_WH = 6.0  # hue: emphasized (error diffusion cannot compensate)
 
 
 # =============================================================================
