@@ -14,7 +14,7 @@ from .color_space_lab import (
     precompute_palette_lab,
 )
 from .palettes import ColorPalette, ColorScheme
-from .tone_map import auto_compress_dynamic_range, compress_dynamic_range, gamut_compress
+from .tone_map import auto_compress_dynamic_range, auto_gamut_compress, compress_dynamic_range, gamut_compress
 
 
 @dataclass(frozen=True)
@@ -169,7 +169,7 @@ def error_diffusion_dither(
     kernel: ErrorDiffusionKernel,
     serpentine: bool = True,
     tone_compression: float | str = "auto",
-    gamut_compression: float = 0.0,
+    gamut_compression: float | str = 0.0,
 ) -> Image.Image:
     """Generic error diffusion dithering with any kernel.
 
@@ -227,7 +227,9 @@ def error_diffusion_dither(
             pixels_linear = compress_dynamic_range(pixels_linear, palette_linear, tone_compression)
 
     # Gamut compression: blend out-of-gamut pixels toward nearest palette color
-    if gamut_compression > 0.0:
+    if gamut_compression == "auto":
+        pixels_linear = auto_gamut_compress(pixels_linear, palette_linear)
+    elif isinstance(gamut_compression, float) and gamut_compression > 0.0:
         pixels_linear = gamut_compress(pixels_linear, palette_linear, gamut_compression)
 
     # Pre-compute palette LAB components for scalar per-pixel matching
@@ -328,7 +330,7 @@ def floyd_steinberg_dither(
     color_scheme: ColorScheme | ColorPalette,
     serpentine: bool = True,
     tone_compression: float | str = "auto",
-    gamut_compression: float = 0.0,
+    gamut_compression: float | str = 0.0,
 ) -> Image.Image:
     """Apply Floyd-Steinberg error diffusion dithering.
 
@@ -356,7 +358,7 @@ def burkes_dither(
     color_scheme: ColorScheme | ColorPalette,
     serpentine: bool = True,
     tone_compression: float | str = "auto",
-    gamut_compression: float = 0.0,
+    gamut_compression: float | str = 0.0,
 ) -> Image.Image:
     """Apply Burkes error diffusion dithering.
 
@@ -382,7 +384,7 @@ def sierra_dither(
     color_scheme: ColorScheme | ColorPalette,
     serpentine: bool = True,
     tone_compression: float | str = "auto",
-    gamut_compression: float = 0.0,
+    gamut_compression: float | str = 0.0,
 ) -> Image.Image:
     """Apply Sierra error diffusion dithering.
 
@@ -410,7 +412,7 @@ def sierra_lite_dither(
     color_scheme: ColorScheme | ColorPalette,
     serpentine: bool = True,
     tone_compression: float | str = "auto",
-    gamut_compression: float = 0.0,
+    gamut_compression: float | str = 0.0,
 ) -> Image.Image:
     """Apply Sierra Lite error diffusion dithering.
 
@@ -437,7 +439,7 @@ def atkinson_dither(
     color_scheme: ColorScheme | ColorPalette,
     serpentine: bool = True,
     tone_compression: float | str = "auto",
-    gamut_compression: float = 0.0,
+    gamut_compression: float | str = 0.0,
 ) -> Image.Image:
     """Apply Atkinson error diffusion dithering.
 
@@ -465,7 +467,7 @@ def stucki_dither(
     color_scheme: ColorScheme | ColorPalette,
     serpentine: bool = True,
     tone_compression: float | str = "auto",
-    gamut_compression: float = 0.0,
+    gamut_compression: float | str = 0.0,
 ) -> Image.Image:
     """Apply Stucki error diffusion dithering.
 
@@ -493,7 +495,7 @@ def jarvis_judice_ninke_dither(
     color_scheme: ColorScheme | ColorPalette,
     serpentine: bool = True,
     tone_compression: float | str = "auto",
-    gamut_compression: float = 0.0,
+    gamut_compression: float | str = 0.0,
 ) -> Image.Image:
     """Apply Jarvis-Judice-Ninke error diffusion dithering.
 
@@ -527,7 +529,7 @@ def direct_palette_map(
     image: Image.Image,
     color_scheme: ColorScheme | ColorPalette,
     tone_compression: float | str = "auto",
-    gamut_compression: float = 0.0,
+    gamut_compression: float | str = 0.0,
 ) -> Image.Image:
     """Map image colors directly to palette without dithering.
 
@@ -567,7 +569,9 @@ def direct_palette_map(
             pixels_linear = compress_dynamic_range(pixels_linear, palette_linear, tone_compression)
 
     # Gamut compression: blend out-of-gamut pixels toward nearest palette color
-    if gamut_compression > 0.0:
+    if gamut_compression == "auto":
+        pixels_linear = auto_gamut_compress(pixels_linear, palette_linear)
+    elif isinstance(gamut_compression, float) and gamut_compression > 0.0:
         pixels_linear = gamut_compress(pixels_linear, palette_linear, gamut_compression)
 
     # Find closest palette color for ALL pixels at once using LAB
@@ -586,7 +590,7 @@ def ordered_dither(
     image: Image.Image,
     color_scheme: ColorScheme | ColorPalette,
     tone_compression: float | str = "auto",
-    gamut_compression: float = 0.0,
+    gamut_compression: float | str = 0.0,
 ) -> Image.Image:
     """Apply ordered (Bayer) dithering with full vectorization.
 
@@ -641,7 +645,9 @@ def ordered_dither(
             pixels_linear = compress_dynamic_range(pixels_linear, palette_linear, tone_compression)
 
     # Gamut compression: blend out-of-gamut pixels toward nearest palette color
-    if gamut_compression > 0.0:
+    if gamut_compression == "auto":
+        pixels_linear = auto_gamut_compress(pixels_linear, palette_linear)
+    elif isinstance(gamut_compression, float) and gamut_compression > 0.0:
         pixels_linear = gamut_compress(pixels_linear, palette_linear, gamut_compression)
 
     # ===== VECTORIZED ORDERED DITHERING =====

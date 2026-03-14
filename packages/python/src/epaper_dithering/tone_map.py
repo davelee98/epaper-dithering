@@ -223,3 +223,39 @@ def gamut_compress(
 
     clipped: np.ndarray = np.clip(result, 0.0, 1.0)
     return clipped
+
+
+def auto_gamut_compress(
+    pixels_linear: np.ndarray,
+    palette_linear: np.ndarray,
+) -> np.ndarray:
+    """Conditionally apply gamut compression based on image content.
+
+    Analyzes the image's 95th-percentile nearest-palette-color distance and
+    only compresses when a meaningful fraction of pixels genuinely lie outside
+    the display's reproducible gamut. Images whose colors already fall within
+    the palette's gamut are returned unchanged.
+
+    Args:
+        pixels_linear: Image in linear RGB, shape (H, W, 3), values in [0, 1].
+        palette_linear: Palette in linear RGB, shape (N, 3).
+
+    Returns:
+        Modified pixels_linear array, or the original if already in gamut.
+    """
+    lab_pixels = rgb_to_lab(pixels_linear)
+    lab_palette = rgb_to_lab(palette_linear)
+
+    diff = lab_pixels[..., np.newaxis, :] - lab_palette[np.newaxis, :, :]
+    dist_sq = np.sum(diff**2, axis=-1)
+    nearest_dist = np.sqrt(np.min(dist_sq, axis=-1))  # (H, W)
+
+    p95 = float(np.percentile(nearest_dist, 95))
+
+    # Only compress if a significant portion of the image is out of gamut.
+    # 0.25 sits between natural photos (p95 ≈ 0.20) and synthetic/vivid images
+    # (p95 ≈ 0.30+). Raised above _THRESHOLD_MAX (0.20) to avoid false triggers.
+    if p95 <= 0.25:
+        return pixels_linear
+
+    return gamut_compress(pixels_linear, palette_linear, strength=0.7)

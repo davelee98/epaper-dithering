@@ -68,7 +68,7 @@ def tc_str(tc: float | str) -> str:
 
 
 def render(
-    src: Image.Image, scheme: object, mode: DitherMode, tc: float | str, gc: float = 0.0
+    src: Image.Image, scheme: object, mode: DitherMode, tc: float | str, gc: float | str = 0.0
 ) -> tuple[Image.Image, float]:
     t0 = time.perf_counter()
     dithered = dither_image(src, scheme, mode, tone_compression=tc, gamut_compression=gc)
@@ -119,13 +119,13 @@ def run(
     docs: bool,
     docs_algo: str,
     docs_tc: str,
-    gamut_compression: float = 0.0,
+    gamut_compression: float | str = 0.0,
 ) -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
     src = Image.open(image_path).convert("RGB").resize((width, height), Image.LANCZOS)
     iw, ih = width, height
 
-    gc_label = f" · gc={gamut_compression}" if gamut_compression > 0 else ""
+    gc_label = f" · gc={gamut_compression}" if gamut_compression != 0.0 else ""
     print(f"Input:  {image_path}  ({width}×{height}){gc_label}\n")
 
     # ------------------------------------------------------------------
@@ -223,12 +223,12 @@ def main() -> None:
     )
     parser.add_argument(
         "--gamut-compression",
-        type=float,
-        default=0.0,
+        default="auto",
         metavar="GC",
-        help="Gamut compression strength 0.0–1.0 (default: 0.0 = off). Try 0.7–0.9 for vivid colors.",
+        help="Gamut compression: 'auto' (default), or strength 0.0–1.0.",
     )
     args = parser.parse_args()
+    gc: float | str = "auto" if args.gamut_compression == "auto" else float(args.gamut_compression)
     run(
         Path(args.image),
         Path(args.out),
@@ -237,7 +237,7 @@ def main() -> None:
         args.docs,
         args.docs_algo_palette,
         args.docs_tc_palette,
-        args.gamut_compression,
+        gc,
     )
 
 

@@ -19,7 +19,7 @@ def dither_image(
     mode: DitherMode = DitherMode.BURKES,
     serpentine: bool = True,
     tone_compression: float | str = "auto",
-    gamut_compression: float = 0.0,
+    gamut_compression: float | str = "auto",
 ) -> Image.Image:
     """Apply dithering to image for e-paper display.
 
@@ -34,11 +34,13 @@ def dither_image(
             "auto" = analyze image histogram and fit to display range.
             0.0 = disabled, 0.0-1.0 = fixed linear compression strength.
             Only applies to measured ColorPalette.
-        gamut_compression: Pre-dithering gamut compression (default: 0.0 = off).
+        gamut_compression: Pre-dithering gamut compression (default: "auto").
             Blends out-of-gamut pixels toward their nearest palette color before
             dithering. Useful for images with highly saturated colors the palette
             cannot reproduce (e.g. vivid purple on a BWGBRY display).
-            0.0 = disabled, 0.7-0.9 = recommended for typical use.
+            "auto" = only compress when image content genuinely exceeds the
+            palette gamut (p95 nearest-palette distance > 0.25 in OKLab).
+            0.0 = disabled, 0.7-0.9 = fixed strength for vivid/synthetic images.
 
     Returns:
         Dithered palette image matching color scheme
