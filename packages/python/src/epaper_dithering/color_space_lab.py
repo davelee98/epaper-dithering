@@ -1,8 +1,9 @@
-"""LAB color space conversions and LCH-weighted color matching for dithering.
+"""OKLab color space conversions and LCH-weighted color matching for dithering.
 
-CIELAB (L*a*b*) is a perceptually uniform color space where equal distances
-represent equal perceived color differences. This module uses LAB for color
-matching with a dithering-optimized LCH (Lightness-Chroma-Hue) weighting.
+OKLab (Ottosson 2020) is a perceptually uniform color space with better hue
+linearity than CIELAB. Equal distances in OKLab represent more consistent
+perceived color differences across all hue angles, including the yellow/purple
+regions where CIELAB is known to warp.
 
 Why LCH Weighting for Dithering:
 ---------------------------------
@@ -13,7 +14,7 @@ than lightness accuracy because:
 - Error diffusion CANNOT compensate for hue errors (no way to mix green from
   non-green palette colors)
 
-The LCH decomposition uses the CIE identity: da^2 + db^2 = dC^2 + dH^2,
+The LCH decomposition uses the identity: da^2 + db^2 = dC^2 + dH^2,
 allowing us to weight the three perceptual dimensions independently:
 - Lightness (WL=0.5): de-emphasized, error diffusion handles this
 - Chroma (WC=1.0): standard weight
@@ -21,7 +22,8 @@ allowing us to weight the three perceptual dimensions independently:
 
 References:
 ----------
-- CIE 1976 L*a*b* color space
+- Ottosson, B. — "A perceptual color space for image processing", 2020
+  https://bottosson.github.io/posts/oklab/
 - http://www.brucelindbloom.com/index.html?Eqn_RGB_XYZ_Matrix.html
 """
 
@@ -46,15 +48,26 @@ _M_RGB_TO_XYZ = np.array(
     dtype=np.float64,
 )
 
-# D65 reference white point
-_XN = 0.95047
-_YN = 1.00000
-_ZN = 1.08883
-_D65_WHITE = np.array([_XN, _YN, _ZN], dtype=np.float64)
+# OKLab matrices (Ottosson 2020)
+# M1: XYZ → LMS (Hunt-Pointer-Estevez with Bradford adaptation)
+_M1 = np.array(
+    [
+        [0.8189330101, 0.3618667424, -0.1288597137],
+        [0.0329845436, 0.9293118715, 0.0361456387],
+        [0.0482003018, 0.2643662691, 0.6338517070],
+    ],
+    dtype=np.float64,
+)
 
-# CIE LAB constants
-_EPSILON = 216.0 / 24389.0  # 0.008856...
-_KAPPA = 24389.0 / 27.0  # 903.296...
+# M2: cbrt(LMS) → OKLab
+_M2 = np.array(
+    [
+        [0.2104542553, 0.7936177850, -0.0040720468],
+        [1.9779984951, -2.4285922050, 0.4505937099],
+        [0.0259040371, 0.7827717662, -0.8086757660],
+    ],
+    dtype=np.float64,
+)
 
 # LCH distance weights for dithering
 _WL = 0.5  # lightness: de-emphasized (error diffusion compensates)
@@ -68,40 +81,25 @@ _WH = 2.0  # hue: emphasized (error diffusion cannot compensate)
 
 
 def rgb_to_lab(rgb: np.ndarray) -> np.ndarray:
-    """Convert linear RGB to CIELAB color space.
+    """Convert linear RGB to OKLab color space.
 
     Args:
         rgb: Linear RGB values in [0, 1] range. Shape: (..., 3)
 
     Returns:
-        LAB values. L in [0, 100], a and b in [-128, 127]. Shape: (..., 3)
+        OKLab values. L in [0, 1], a and b in [-0.5, 0.5]. Shape: (..., 3)
     """
     xyz = rgb @ _M_RGB_TO_XYZ.T
-    xyz_norm = xyz / _D65_WHITE
-
-    def f(t: np.ndarray) -> np.ndarray:
-        mask = t > _EPSILON
-        result = np.empty_like(t)
-        result[mask] = np.cbrt(t[mask])
-        result[~mask] = (_KAPPA * t[~mask] + 16.0) / 116.0
-        return result
-
-    fx = f(xyz_norm[..., 0])
-    fy = f(xyz_norm[..., 1])
-    fz = f(xyz_norm[..., 2])
-
-    L = 116.0 * fy - 16.0
-    a = 500.0 * (fx - fy)
-    b = 200.0 * (fy - fz)
-
-    return np.stack([L, a, b], axis=-1)
+    lms = xyz @ _M1.T
+    lms_ = np.cbrt(lms)
+    return lms_ @ _M2.T
 
 
 def find_closest_palette_color_lab(
     rgb_linear: np.ndarray,
     palette_linear: np.ndarray,
 ) -> np.ndarray:
-    """Find closest palette color using LCH-weighted LAB distance.
+    """Find closest palette color using LCH-weighted OKLab distance.
 
     Optimized for batch operations (entire image at once). Uses numpy
     broadcasting to compute distances for all pixels simultaneously.
@@ -145,28 +143,27 @@ def find_closest_palette_color_lab(
 # =============================================================================
 
 
-def _lab_f(t: float) -> float:
-    """CIE LAB nonlinear function (scalar version)."""
-    if t > _EPSILON:
-        return float(t ** (1.0 / 3.0))
-    return (_KAPPA * t + 16.0) / 116.0
-
-
 def _rgb_to_lab_scalar(r: float, g: float, b: float) -> tuple[float, float, float]:
-    """Convert a single linear RGB pixel to LAB (scalar, no numpy)."""
+    """Convert a single linear RGB pixel to OKLab (scalar, no numpy)."""
     # RGB -> XYZ (inline matrix multiply)
     x = 0.4124564 * r + 0.3575761 * g + 0.1804375 * b
     y = 0.2126729 * r + 0.7151522 * g + 0.0721750 * b
     z = 0.0193339 * r + 0.1191920 * g + 0.9503041 * b
 
-    # Normalize by D65 white point
-    fx = _lab_f(x / _XN)
-    fy = _lab_f(y / _YN)
-    fz = _lab_f(z / _ZN)
+    # XYZ -> LMS (M1)
+    l = 0.8189330101 * x + 0.3618667424 * y + (-0.1288597137) * z  # noqa: E741
+    m = 0.0329845436 * x + 0.9293118715 * y + 0.0361456387 * z
+    s = 0.0482003018 * x + 0.2643662691 * y + 0.6338517070 * z
 
-    L = 116.0 * fy - 16.0
-    a = 500.0 * (fx - fy)
-    b_val = 200.0 * (fy - fz)
+    # Cube root
+    l_ = math.cbrt(l)
+    m_ = math.cbrt(m)
+    s_ = math.cbrt(s)
+
+    # cbrt(LMS) -> OKLab (M2)
+    L = 0.2104542553 * l_ + 0.7936177850 * m_ + (-0.0040720468) * s_
+    a = 1.9779984951 * l_ + (-2.4285922050) * m_ + 0.4505937099 * s_
+    b_val = 0.0259040371 * l_ + 0.7827717662 * m_ + (-0.8086757660) * s_
     return L, a, b_val
 
 
@@ -185,7 +182,7 @@ def _match_pixel_lch(
 
     Args:
         r, g, b: Pixel in linear RGB [0, 1]
-        palette_L, palette_a, palette_b: Pre-computed LAB components of palette
+        palette_L, palette_a, palette_b: Pre-computed OKLab components of palette
         palette_C: Pre-computed chroma of palette colors
 
     Returns:
@@ -217,7 +214,7 @@ def _match_pixel_lch(
 def precompute_palette_lab(
     palette_linear: np.ndarray,
 ) -> tuple[tuple[float, ...], tuple[float, ...], tuple[float, ...], tuple[float, ...]]:
-    """Pre-compute palette LAB components for scalar matching.
+    """Pre-compute palette OKLab components for scalar matching.
 
     Call once before the error diffusion loop, then pass results to
     _match_pixel_lch() for each pixel.
