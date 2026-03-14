@@ -1,6 +1,6 @@
 import { SRGB_TO_LINEAR_LUT } from './color_space';
 import { precomputePaletteLab, matchPixelLch } from './color_space_lab';
-import { autoCompressDynamicRange } from './tone_map';
+import { autoCompressDynamicRange, compressDynamicRange } from './tone_map';
 import type { RGB, ImageBuffer, PaletteImageBuffer, ColorPalette } from './types';
 import { ColorScheme, getPalette } from './palettes';
 
@@ -72,6 +72,7 @@ function errorDiffusionDither(
   scheme: ColorScheme | ColorPalette,
   kernel: ErrorKernel[],
   serpentine: boolean,
+  toneCompression: number | 'auto' = 'auto',
 ): PaletteImageBuffer {
   const { width, height } = image;
   const palette = resolvePalette(scheme);
@@ -83,7 +84,11 @@ function errorDiffusionDither(
 
   // Tone compression for measured palettes only
   if (typeof scheme !== 'number') {
-    autoCompressDynamicRange(pixels, width, height, paletteLinear);
+    if (toneCompression === 'auto') {
+      autoCompressDynamicRange(pixels, width, height, paletteLinear);
+    } else if (toneCompression > 0) {
+      compressDynamicRange(pixels, width, height, paletteLinear, toneCompression);
+    }
   }
 
   // Pre-compute palette LAB for the hot loop
@@ -152,6 +157,7 @@ function errorDiffusionDither(
 export function directPaletteMap(
   image: ImageBuffer,
   scheme: ColorScheme | ColorPalette,
+  toneCompression: number | 'auto' = 'auto',
 ): PaletteImageBuffer {
   const { width, height } = image;
   const palette = resolvePalette(scheme);
@@ -160,7 +166,11 @@ export function directPaletteMap(
   const pixels = buildLinearBuffer(image);
 
   if (typeof scheme !== 'number') {
-    autoCompressDynamicRange(pixels, width, height, paletteLinear);
+    if (toneCompression === 'auto') {
+      autoCompressDynamicRange(pixels, width, height, paletteLinear);
+    } else if (toneCompression > 0) {
+      compressDynamicRange(pixels, width, height, paletteLinear, toneCompression);
+    }
   }
 
   const { L: palL, a: palA, b: palB, C: palC } = precomputePaletteLab(paletteLinear);
@@ -181,6 +191,7 @@ export function directPaletteMap(
 export function orderedDither(
   image: ImageBuffer,
   scheme: ColorScheme | ColorPalette,
+  toneCompression: number | 'auto' = 'auto',
 ): PaletteImageBuffer {
   const { width, height } = image;
   const palette = resolvePalette(scheme);
@@ -189,7 +200,11 @@ export function orderedDither(
   const pixels = buildLinearBuffer(image);
 
   if (typeof scheme !== 'number') {
-    autoCompressDynamicRange(pixels, width, height, paletteLinear);
+    if (toneCompression === 'auto') {
+      autoCompressDynamicRange(pixels, width, height, paletteLinear);
+    } else if (toneCompression > 0) {
+      compressDynamicRange(pixels, width, height, paletteLinear, toneCompression);
+    }
   }
 
   const { L: palL, a: palA, b: palB, C: palC } = precomputePaletteLab(paletteLinear);
