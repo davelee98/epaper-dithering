@@ -199,20 +199,19 @@ def gamut_compress(
     palette_linear: np.ndarray,
     strength: float = 1.0,
 ) -> np.ndarray:
-    """Blend out-of-gamut pixels toward the hue-matching point on the palette hull.
+    """Blend out-of-gamut pixels toward the nearest point on the palette hull.
 
-    Pre-dithering step that reduces colors lying far outside the display's
-    reproducible gamut. For each pixel, finds the point on the nearest palette
-    edge whose hue matches the pixel's hue — so a vivid purple lands between
-    blue and red rather than collapsing to the Euclidean nearest vertex. This
-    preserves the pixel's hue character and gives error diffusion a better
-    starting point for mixing.
+    For each palette edge (pair of palette colors), finds the nearest point on
+    that segment in 3D OKLab space. The overall nearest hull point across all
+    edges and vertices is used as the compression target.
+
+    A smoothstep blend factor ramps from 0 at _THRESHOLD to 1 at _THRESHOLD_MAX,
+    so only pixels far outside the gamut are significantly affected.
 
     Args:
         pixels_linear: Image in linear RGB, shape (H, W, 3), values in [0, 1].
         palette_linear: Palette in linear RGB, shape (N, 3).
-        strength: 0.0 = no compression, 1.0 = full blend to hue-matching
-            palette edge point for pixels far outside the gamut.
+        strength: 0.0 = no compression, 1.0 = full blend toward nearest hull point.
 
     Returns:
         Modified pixels_linear array with out-of-gamut colors compressed.
@@ -224,35 +223,24 @@ def gamut_compress(
     lab_palette = rgb_to_lab(palette_linear)  # (N, 3)
     n_colors = len(palette_linear)
 
-    pixel_a = lab_pixels[..., 1]  # (H, W) — OKLab a (green↔red)
-    pixel_b = lab_pixels[..., 2]  # (H, W) — OKLab b (blue↔yellow)
-
-    # For each palette edge, find the point where the interpolated hue matches
-    # the pixel's hue. This is hue-preserving gamut mapping: a vivid purple lands
-    # between blue and red rather than collapsing to the Euclidean nearest vertex.
-    #
-    # Hue equality condition: (a0 + t*da)*pixel_b == (b0 + t*db)*pixel_a
-    # Solving for t: t = (b0*pixel_a - a0*pixel_b) / (da*pixel_b - db*pixel_a)
-    #
-    # t is clipped to [0, 1] so edges that don't span the pixel's hue degrade
-    # gracefully to their nearest endpoint.
     best_dist_sq = np.full(pixels_linear.shape[:2], np.inf)
     best_target_rgb = np.zeros_like(pixels_linear)
 
+    # For each palette edge: nearest-point-on-segment in 3D OKLab
     for i in range(n_colors):
         for j in range(i + 1, n_colors):
-            a0 = lab_palette[i, 1]
-            b0 = lab_palette[i, 2]
-            da = lab_palette[j, 1] - a0
-            db = lab_palette[j, 2] - b0
-            denom = da * pixel_b - db * pixel_a  # (H, W)
-            numer = b0 * pixel_a - a0 * pixel_b  # (H, W)
-            valid = np.abs(denom) > 1e-10
-            seg_t = np.clip(
-                np.where(valid, numer / np.where(valid, denom, 1.0), 0.0),
-                0.0,
-                1.0,
-            )  # (H, W)
+            edge = lab_palette[j] - lab_palette[i]  # (3,)
+            edge_len_sq = float(np.dot(edge, edge))
+            if edge_len_sq > 1e-10:
+                diff_from_i = lab_pixels - lab_palette[i]  # (H, W, 3)
+                seg_t = np.clip(
+                    np.einsum("hwc,c->hw", diff_from_i, edge) / edge_len_sq,
+                    0.0,
+                    1.0,
+                )
+            else:
+                seg_t = np.zeros(pixels_linear.shape[:2])
+
             nearest_lab = lab_palette[i] + seg_t[..., np.newaxis] * (lab_palette[j] - lab_palette[i])
             dist_sq = np.sum((lab_pixels - nearest_lab) ** 2, axis=-1)
             target_rgb = palette_linear[i] + seg_t[..., np.newaxis] * (palette_linear[j] - palette_linear[i])
@@ -260,8 +248,8 @@ def gamut_compress(
             best_dist_sq = np.where(better, dist_sq, best_dist_sq)
             best_target_rgb = np.where(better[..., np.newaxis], target_rgb, best_target_rgb)
 
-    # Fallback: nearest palette vertex — handles achromatic pixels (hue undefined)
-    # and any degenerate cases where all segments clip to endpoints.
+    # Also consider nearest palette vertex (catches pixels nearer to a vertex
+    # than to any edge segment)
     diff_v = lab_pixels[..., np.newaxis, :] - lab_palette[np.newaxis, :, :]  # (H, W, N, 3)
     dist_sq_v = np.sum(diff_v**2, axis=-1)  # (H, W, N)
     nearest_v_idx = np.argmin(dist_sq_v, axis=-1)  # (H, W)
@@ -273,10 +261,14 @@ def gamut_compress(
 
     nearest_dist = np.sqrt(best_dist_sq)
 
-    # Smoothstep blend factor: 0 inside gamut, ramps to 1 far outside
-    # Threshold chosen in OKLab space: 0.05 ≈ just-noticeable difference
-    _THRESHOLD = 0.05
-    _THRESHOLD_MAX = 0.20
+    # Smoothstep: no effect below _THRESHOLD, full effect at _THRESHOLD_MAX.
+    # Distances in OKLab units (L ∈ [0,1], a/b ∈ [-0.5, 0.5]):
+    #   Natural photos / near-gamut colors: dist < 0.10 → unaffected
+    #   sRGB primaries on a 6-color display: dist ≈ 0.19–0.22 → slight blend
+    #   Vivid purple on BWGBRY display:      dist ≈ 0.29    → meaningful blend
+    #   Magenta:                             dist ≈ 0.35+   → strong blend
+    _THRESHOLD = 0.15
+    _THRESHOLD_MAX = 0.45
     blend_t = np.clip((nearest_dist - _THRESHOLD) / (_THRESHOLD_MAX - _THRESHOLD), 0.0, 1.0)
     blend_factor = blend_t * blend_t * (3.0 - 2.0 * blend_t) * strength  # smoothstep × strength
 
@@ -286,71 +278,21 @@ def gamut_compress(
     return clipped
 
 
-def _optimize_compression_strength(
-    pixels_linear: np.ndarray,
-    palette_linear: np.ndarray,
-    compress_fn: object,
-    candidates: list[float],
-) -> float:
-    """Select compression strength that minimizes mean OKLab nearest-palette distance.
-
-    Evaluates each candidate strength by applying compression and measuring the
-    mean OKLab distance between compressed pixels and their nearest palette color.
-    No dithering required — error diffusion redistributes but does not change
-    total quantization error, so pre-diffusion distance is a valid proxy.
-
-    Args:
-        pixels_linear: Image in linear RGB, shape (H, W, 3).
-        palette_linear: Palette in linear RGB, shape (N, 3).
-        compress_fn: Callable(pixels, palette, strength) -> compressed_pixels.
-        candidates: Strength values to evaluate (must include 0.0).
-
-    Returns:
-        Strength from candidates with minimum mean quantization error.
-    """
-    lab_palette = rgb_to_lab(palette_linear)  # (N, 3)
-
-    best_strength = candidates[0]
-    best_error = float("inf")
-
-    for s in candidates:
-        if s > 0.0:
-            compressed = compress_fn(pixels_linear, palette_linear, s)  # type: ignore[operator]
-        else:
-            compressed = pixels_linear
-        lab_pixels = rgb_to_lab(compressed)
-        diff = lab_pixels[..., np.newaxis, :] - lab_palette[np.newaxis, :, :]  # (H, W, N, 3)
-        nearest_dist = np.sqrt(np.min(np.sum(diff**2, axis=-1), axis=-1))  # (H, W)
-        error = float(np.mean(nearest_dist))
-
-        if error < best_error:
-            best_error = error
-            best_strength = s
-
-    return best_strength
-
-
 def auto_gamut_compress(
     pixels_linear: np.ndarray,
     palette_linear: np.ndarray,
 ) -> np.ndarray:
-    """Conditionally apply gamut compression based on image content.
+    """Apply moderate gamut compression suitable for most images.
 
-    Selects the compression strength that minimizes mean OKLab nearest-palette
-    distance across 5 candidate values. Strength 0.0 is always a candidate, so
-    images already within the display's gamut are returned unchanged.
+    Uses a fixed strength of 0.5, which compresses strongly out-of-gamut colors
+    (vivid purple, magenta) while leaving near-gamut colors nearly unchanged.
+    Pass an explicit strength to gamut_compress() for finer control.
 
     Args:
         pixels_linear: Image in linear RGB, shape (H, W, 3), values in [0, 1].
         palette_linear: Palette in linear RGB, shape (N, 3).
 
     Returns:
-        Modified pixels_linear array with optimal gamut compression applied.
+        Modified pixels_linear array with gamut compression applied.
     """
-    _CANDIDATES = [0.0, 0.25, 0.5, 0.75, 1.0]
-    strength = _optimize_compression_strength(pixels_linear, palette_linear, gamut_compress, _CANDIDATES)
-
-    if strength <= 0.0:
-        return pixels_linear
-
-    return gamut_compress(pixels_linear, palette_linear, strength=strength)
+    return gamut_compress(pixels_linear, palette_linear, strength=1.0)

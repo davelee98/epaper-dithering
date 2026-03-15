@@ -17,8 +17,11 @@ than lightness accuracy because:
 The LCH decomposition uses the identity: da^2 + db^2 = dC^2 + dH^2,
 allowing us to weight the three perceptual dimensions independently:
 - Lightness (WL=0.5): de-emphasized, error diffusion handles this
-- Chroma (WC=1.0): standard weight
-- Hue (WH=2.0): emphasized, prevents cross-hue errors like green->yellow
+- Chroma (WC=3.0): scaled up for OKLab's smaller C range [0, ~0.4]
+- Hue (WH=6.0): emphasized, prevents cross-hue errors like green->yellow
+
+Note: gamut compression uses plain Euclidean OKLab (not LCH-weighted) since
+it operates on the image before dithering and targets a different goal.
 
 References:
 ----------
@@ -69,19 +72,8 @@ _M2 = np.array(
     dtype=np.float64,
 )
 
-# LCH distance weights for dithering (tuned for OKLab scale)
-#
-# OKLab: L ∈ [0, 1], C ∈ [0, ~0.4] — very different scale from CIELAB
-# (CIELAB: L ∈ [0, 100], C ∈ [0, ~130]).
-#
-# To maintain the same relative emphasis as the original CIELAB weights
-# (WL=0.5, WC=1.0, WH=2.0), the chroma/hue weights must be scaled up:
-#   CIELAB: effective L range = 100×0.5 = 50, C range = 130×1.0 = 130 → C is 2.6× L
-#   OKLab:  effective L range =   1×0.5 = 0.5, target C = 2.6×0.5 = 1.3 → WC = 1.3/0.4 ≈ 3.0
-#
-# Without this scaling, chroma penalties become negligible in OKLab units,
-# causing achromatic pixels to map to intermediate-L chromatic palette colors
-# (e.g. green at L=0.43) instead of neutral black/white.
+
+# LCH distance weights for dithering
 _WL = 0.5  # lightness: de-emphasized (error diffusion compensates)
 _WC = 3.0  # chroma: scaled up for OKLab's smaller C range [0, ~0.4]
 _WH = 6.0  # hue: emphasized (error diffusion cannot compensate)
