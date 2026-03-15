@@ -146,7 +146,7 @@ def run(
     print("── schemes ──────────────────────────────────")
     scheme_cells: list[tuple[str, Image.Image]] = []
     for label, scheme in COLOR_SCHEMES:
-        img, t = render(src, scheme, DitherMode.BURKES, 0, gamut_compression)
+        img, t = render(src, scheme, DitherMode.BURKES, 0.0, gamut_compression)
         scheme_cells.append((f"{label} · Burkes · tc=0{gc_label}", img))
         print(f"  {label:<16} {t * 1000:>6.0f}ms")
     save(make_sheet(scheme_cells, 4, iw, ih), out_dir / "schemes.png")
@@ -158,7 +158,7 @@ def run(
     print("── algorithms ───────────────────────────────")
     algo_cells_by_name: dict[str, list[tuple[str, Image.Image]]] = {}
     for palette_label, palette in ALL_PALETTES_FOR_ALGO:
-        tc: float | str = 0 if palette_label in COLOR_SCHEME_NAMES else "auto"
+        tc: float | str = 0.0 if palette_label in COLOR_SCHEME_NAMES else "auto"
         cells: list[tuple[str, Image.Image]] = []
         for mode in ALL_ALGORITHMS:
             img, t = render(src, palette, mode, tc, gamut_compression)
@@ -175,7 +175,7 @@ def run(
     tc_cells: list[tuple[str, Image.Image]] = []
     tc_cells_solum: list[tuple[str, Image.Image]] = []
     for pal_label, palette in MEASURED_PALETTES:
-        for tc_val in [0, "auto", 1.0]:
+        for tc_val in [0.0, "auto", 1.0]:
             img, t = render(src, palette, DitherMode.BURKES, tc_val, gamut_compression)
             label = f"{pal_label} · Burkes · {tc_str(tc_val)}{gc_label}"
             tc_cells.append((label, img))
@@ -191,7 +191,7 @@ def run(
     print("── gamut_compression ────────────────────────")
     gc_cells: list[tuple[str, Image.Image]] = []
     for pal_label, palette in MEASURED_PALETTES:
-        for gc_val in [0, "auto", 1.0]:
+        for gc_val in [0.0, "auto", 1.0]:
             img, t = render(src, palette, DitherMode.BURKES, "auto", gc_val)
             label = f"{pal_label} · Burkes · {gc_str(gc_val)}"
             gc_cells.append((label, img))
