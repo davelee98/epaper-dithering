@@ -258,47 +258,71 @@ def gamut_compress(
     return clipped
 
 
+def _optimize_compression_strength(
+    pixels_linear: np.ndarray,
+    palette_linear: np.ndarray,
+    compress_fn: object,
+    candidates: list[float],
+) -> float:
+    """Select compression strength that minimizes mean OKLab nearest-palette distance.
+
+    Evaluates each candidate strength by applying compression and measuring the
+    mean OKLab distance between compressed pixels and their nearest palette color.
+    No dithering required — error diffusion redistributes but does not change
+    total quantization error, so pre-diffusion distance is a valid proxy.
+
+    Args:
+        pixels_linear: Image in linear RGB, shape (H, W, 3).
+        palette_linear: Palette in linear RGB, shape (N, 3).
+        compress_fn: Callable(pixels, palette, strength) -> compressed_pixels.
+        candidates: Strength values to evaluate (must include 0.0).
+
+    Returns:
+        Strength from candidates with minimum mean quantization error.
+    """
+    lab_palette = rgb_to_lab(palette_linear)  # (N, 3)
+
+    best_strength = candidates[0]
+    best_error = float("inf")
+
+    for s in candidates:
+        if s > 0.0:
+            compressed = compress_fn(pixels_linear, palette_linear, s)  # type: ignore[operator]
+        else:
+            compressed = pixels_linear
+        lab_pixels = rgb_to_lab(compressed)
+        diff = lab_pixels[..., np.newaxis, :] - lab_palette[np.newaxis, :, :]  # (H, W, N, 3)
+        nearest_dist = np.sqrt(np.min(np.sum(diff**2, axis=-1), axis=-1))  # (H, W)
+        error = float(np.mean(nearest_dist))
+
+        if error < best_error:
+            best_error = error
+            best_strength = s
+
+    return best_strength
+
+
 def auto_gamut_compress(
     pixels_linear: np.ndarray,
     palette_linear: np.ndarray,
 ) -> np.ndarray:
     """Conditionally apply gamut compression based on image content.
 
-    Analyzes the image's 95th-percentile nearest-palette-color distance and
-    only compresses when a meaningful fraction of pixels genuinely lie outside
-    the display's reproducible gamut. Images whose colors already fall within
-    the palette's gamut are returned unchanged.
+    Selects the compression strength that minimizes mean OKLab nearest-palette
+    distance across 5 candidate values. Strength 0.0 is always a candidate, so
+    images already within the display's gamut are returned unchanged.
 
     Args:
         pixels_linear: Image in linear RGB, shape (H, W, 3), values in [0, 1].
         palette_linear: Palette in linear RGB, shape (N, 3).
 
     Returns:
-        Modified pixels_linear array, or the original if already in gamut.
+        Modified pixels_linear array with optimal gamut compression applied.
     """
-    lab_pixels = rgb_to_lab(pixels_linear)
-    lab_palette = rgb_to_lab(palette_linear)
+    _CANDIDATES = [0.0, 0.25, 0.5, 0.75, 1.0]
+    strength = _optimize_compression_strength(pixels_linear, palette_linear, gamut_compress, _CANDIDATES)
 
-    diff = lab_pixels[..., np.newaxis, :] - lab_palette[np.newaxis, :, :]
-    dist_sq = np.sum(diff**2, axis=-1)
-    nearest_dist = np.sqrt(np.min(dist_sq, axis=-1))  # (H, W)
-
-    p50 = float(np.percentile(nearest_dist, 50))
-    p95 = float(np.percentile(nearest_dist, 95))
-
-    # Only compress if a significant portion of the image is out of gamut.
-    # 0.25 sits between natural photos (p95 ≈ 0.20) and synthetic/vivid images
-    # (p95 ≈ 0.30+). Raised above _THRESHOLD_MAX (0.20) to avoid false triggers.
-    if p95 <= 0.25:
+    if strength <= 0.0:
         return pixels_linear
-
-    # Derive strength from two independent signals (calibrated OKLab distances):
-    #   p95 / 0.35: images with extreme out-of-gamut outliers → full strength
-    #   p50 / 0.12: images where the median pixel is moderately out-of-gamut
-    #               (widespread issue, not just outliers) → scale up
-    # Take the maximum so either signal can drive full compression independently.
-    s_p95 = float(np.clip(p95 / 0.35, 0.0, 1.0))
-    s_p50 = float(np.clip(p50 / 0.12, 0.0, 1.0))
-    strength = max(s_p95, s_p50)
 
     return gamut_compress(pixels_linear, palette_linear, strength=strength)
