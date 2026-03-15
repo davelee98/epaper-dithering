@@ -95,6 +95,12 @@ def auto_compress_dynamic_range(
     [black_Y, white_Y] range are returned unchanged (ICC Black Point
     Compensation style).
 
+    When compression is needed, strength is derived from the Reinhard 2004
+    log-histogram skewness — the position of the geometric mean luminance
+    within the log luminance range. A balanced image (log-average near center)
+    gets partial compression, preserving perceived contrast. A heavily skewed
+    image (dark scene with bright highlights) gets full compression.
+
     This avoids the over-compression that occurs when unconditionally stretching
     a well-exposed image to fill the display range — which washes out colors
     by pushing already-correct highlights above the display white point.
@@ -137,9 +143,36 @@ def auto_compress_dynamic_range(
         # Image already fits within the display's reproducible range — no change.
         return pixels_linear
 
-    # Remap: [p_low, p_high] → [black_Y, white_Y]
+    # Derive compression strength from Reinhard 2004 log-histogram skewness.
+    #
+    # Skewness = where the geometric mean (log-average) luminance sits within
+    # the log luminance range [log(p_low), log(p_high)]:
+    #   0 = log-average at the bright end → balanced/bright image → less compression
+    #   1 = log-average at the dark end  → dark scene, bright highlights → full compression
+    #
+    # strength = clip(skew ^ 1.4, 0, 1)  — the 1.4 exponent from Reinhard 2004
+    # makes the response non-linear, more sensitive at extremes.
+    Y_nonzero = Y.ravel()
+    Y_nonzero = Y_nonzero[Y_nonzero > 1e-6]
+    if len(Y_nonzero) > 0:
+        L_lav = float(np.exp(np.mean(np.log(Y_nonzero + 1e-5))))
+        log_min = float(np.log(max(p_low, 1e-5)))
+        log_max = float(np.log(max(p_high, 1e-5)))
+        log_range = log_max - log_min
+        if log_range > 1e-6:
+            skew = (log_max - float(np.log(L_lav + 1e-5))) / log_range
+            strength = float(np.clip(skew**1.4, 0.0, 1.0))
+        else:
+            strength = 1.0
+    else:
+        strength = 1.0
+
+    # Remap: [p_low, p_high] → [black_Y, white_Y], blended at computed strength.
+    # At strength=0: original luminance preserved.
+    # At strength=1: full content-adaptive remap (original behaviour).
     normalized_Y = (Y - p_low) / image_range
-    target_Y = black_Y + normalized_Y * display_range
+    target_Y_full = black_Y + normalized_Y * display_range
+    target_Y = Y + strength * (target_Y_full - Y)
 
     # Scale RGB proportionally to preserve hue
     safe_Y = np.where(Y > 1e-6, Y, 1.0)
