@@ -283,6 +283,7 @@ def auto_gamut_compress(
     dist_sq = np.sum(diff**2, axis=-1)
     nearest_dist = np.sqrt(np.min(dist_sq, axis=-1))  # (H, W)
 
+    p50 = float(np.percentile(nearest_dist, 50))
     p95 = float(np.percentile(nearest_dist, 95))
 
     # Only compress if a significant portion of the image is out of gamut.
@@ -291,4 +292,13 @@ def auto_gamut_compress(
     if p95 <= 0.25:
         return pixels_linear
 
-    return gamut_compress(pixels_linear, palette_linear, strength=0.7)
+    # Derive strength from two independent signals (calibrated OKLab distances):
+    #   p95 / 0.35: images with extreme out-of-gamut outliers → full strength
+    #   p50 / 0.12: images where the median pixel is moderately out-of-gamut
+    #               (widespread issue, not just outliers) → scale up
+    # Take the maximum so either signal can drive full compression independently.
+    s_p95 = float(np.clip(p95 / 0.35, 0.0, 1.0))
+    s_p50 = float(np.clip(p50 / 0.12, 0.0, 1.0))
+    strength = max(s_p95, s_p50)
+
+    return gamut_compress(pixels_linear, palette_linear, strength=strength)
