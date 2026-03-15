@@ -224,6 +224,23 @@ SPECTRA_7_3_6COLOR = ColorPalette(
     accent="red",
 )
 
+# 7.3" Spectra™ 6-color (BWGBRY scheme) — v2 measurement
+# Measured: 2026-03-15
+# Equipment: iPhone 15 Pro Max RAW + Affinity (v3), A4 paper white reference
+# Method: DNG with linear tone curve, WB from A4 paper, uniform ×2.4 scale
+#         (paper measured at 100,100,100 → target 240 ≈ 88% A4 reflectance)
+SPECTRA_7_3_6COLOR_V2 = ColorPalette(
+    colors={
+        "black": (31, 24, 41),
+        "white": (168, 180, 182),
+        "yellow": (180, 173, 0),
+        "red": (113, 24, 19),
+        "blue": (36, 70, 139),
+        "green": (50, 84, 60),
+    },
+    accent="red",
+)
+
 # 4.26" Monochrome (MONO scheme)
 # TODO: Measure actual display
 MONO_4_26 = ColorPalette(

@@ -14,6 +14,7 @@ from .palettes import (
     MONO_4_26,
     SOLUM_BWR,
     SPECTRA_7_3_6COLOR,
+    SPECTRA_7_3_6COLOR_V2,
     ColorPalette,
     ColorScheme,
 )
@@ -27,6 +28,7 @@ __all__ = [
     "ColorScheme",
     # Measured palettes for specific displays (v0.4.0)
     "SPECTRA_7_3_6COLOR",
+    "SPECTRA_7_3_6COLOR_V2",
     "MONO_4_26",
     "BWRY_4_2",
     "BWRY_3_97",
