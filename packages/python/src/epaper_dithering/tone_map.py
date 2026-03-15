@@ -199,27 +199,20 @@ def gamut_compress(
     palette_linear: np.ndarray,
     strength: float = 1.0,
 ) -> np.ndarray:
-    """Blend out-of-gamut pixels toward their nearest palette color.
+    """Blend out-of-gamut pixels toward the hue-matching point on the palette hull.
 
     Pre-dithering step that reduces colors lying far outside the display's
-    reproducible gamut. Colors near any palette color are left unchanged;
-    colors far outside are blended toward the nearest palette color.
-
-    Useful for images with highly saturated colors the palette cannot reproduce
-    (e.g. vivid purple on a BWGBRY display where the measured red is very dark).
-    Without compression, error diffusion produces a muddy mix of red/blue dots;
-    with compression the result is a controlled, intentional blend.
-
-    Distance is measured in OKLab with the same LCH weighting used for palette
-    matching, so compression is applied where it matters perceptually. Based on
-    the gamut mapping approach of Stone, Cowan & Beatty (ACM TOG 1988).
+    reproducible gamut. For each pixel, finds the point on the nearest palette
+    edge whose hue matches the pixel's hue — so a vivid purple lands between
+    blue and red rather than collapsing to the Euclidean nearest vertex. This
+    preserves the pixel's hue character and gives error diffusion a better
+    starting point for mixing.
 
     Args:
         pixels_linear: Image in linear RGB, shape (H, W, 3), values in [0, 1].
         palette_linear: Palette in linear RGB, shape (N, 3).
-        strength: 0.0 = no compression, 1.0 = full blend to nearest palette
-            color for pixels far outside the gamut. Values of 0.7–0.9 are
-            recommended for typical use.
+        strength: 0.0 = no compression, 1.0 = full blend to hue-matching
+            palette edge point for pixels far outside the gamut.
 
     Returns:
         Modified pixels_linear array with out-of-gamut colors compressed.
@@ -229,30 +222,65 @@ def gamut_compress(
 
     lab_pixels = rgb_to_lab(pixels_linear)  # (H, W, 3)
     lab_palette = rgb_to_lab(palette_linear)  # (N, 3)
+    n_colors = len(palette_linear)
 
-    # Euclidean OKLab distance to every palette color: (H, W, N)
-    # NOTE: LCH-weighted distance is NOT used here. The LCH hue weight causes
-    # near-achromatic palette colors (black, white) to appear "nearest" to any
-    # saturated pixel because their low chroma produces near-zero hue mismatch.
-    # Plain Euclidean OKLab finds the genuinely closest color by all three
-    # dimensions, so purple correctly maps to blue/red, not to black.
-    diff = lab_pixels[..., np.newaxis, :] - lab_palette[np.newaxis, :, :]  # (H, W, N, 3)
-    dist_sq = np.sum(diff**2, axis=-1)  # (H, W, N)
+    pixel_a = lab_pixels[..., 1]  # (H, W) — OKLab a (green↔red)
+    pixel_b = lab_pixels[..., 2]  # (H, W) — OKLab b (blue↔yellow)
 
-    # Nearest palette color distance per pixel
-    nearest_idx = np.argmin(dist_sq, axis=-1)  # (H, W)
-    nearest_dist = np.sqrt(np.take_along_axis(dist_sq, nearest_idx[..., np.newaxis], axis=-1).squeeze(-1))  # (H, W)
+    # For each palette edge, find the point where the interpolated hue matches
+    # the pixel's hue. This is hue-preserving gamut mapping: a vivid purple lands
+    # between blue and red rather than collapsing to the Euclidean nearest vertex.
+    #
+    # Hue equality condition: (a0 + t*da)*pixel_b == (b0 + t*db)*pixel_a
+    # Solving for t: t = (b0*pixel_a - a0*pixel_b) / (da*pixel_b - db*pixel_a)
+    #
+    # t is clipped to [0, 1] so edges that don't span the pixel's hue degrade
+    # gracefully to their nearest endpoint.
+    best_dist_sq = np.full(pixels_linear.shape[:2], np.inf)
+    best_target_rgb = np.zeros_like(pixels_linear)
+
+    for i in range(n_colors):
+        for j in range(i + 1, n_colors):
+            a0 = lab_palette[i, 1]
+            b0 = lab_palette[i, 2]
+            da = lab_palette[j, 1] - a0
+            db = lab_palette[j, 2] - b0
+            denom = da * pixel_b - db * pixel_a  # (H, W)
+            numer = b0 * pixel_a - a0 * pixel_b  # (H, W)
+            valid = np.abs(denom) > 1e-10
+            seg_t = np.clip(
+                np.where(valid, numer / np.where(valid, denom, 1.0), 0.0),
+                0.0,
+                1.0,
+            )  # (H, W)
+            nearest_lab = lab_palette[i] + seg_t[..., np.newaxis] * (lab_palette[j] - lab_palette[i])
+            dist_sq = np.sum((lab_pixels - nearest_lab) ** 2, axis=-1)
+            target_rgb = palette_linear[i] + seg_t[..., np.newaxis] * (palette_linear[j] - palette_linear[i])
+            better = dist_sq < best_dist_sq
+            best_dist_sq = np.where(better, dist_sq, best_dist_sq)
+            best_target_rgb = np.where(better[..., np.newaxis], target_rgb, best_target_rgb)
+
+    # Fallback: nearest palette vertex — handles achromatic pixels (hue undefined)
+    # and any degenerate cases where all segments clip to endpoints.
+    diff_v = lab_pixels[..., np.newaxis, :] - lab_palette[np.newaxis, :, :]  # (H, W, N, 3)
+    dist_sq_v = np.sum(diff_v**2, axis=-1)  # (H, W, N)
+    nearest_v_idx = np.argmin(dist_sq_v, axis=-1)  # (H, W)
+    nearest_v_dist_sq = np.take_along_axis(dist_sq_v, nearest_v_idx[..., np.newaxis], axis=-1).squeeze(-1)
+    nearest_v_rgb = palette_linear[nearest_v_idx]
+    better_v = nearest_v_dist_sq < best_dist_sq
+    best_dist_sq = np.where(better_v, nearest_v_dist_sq, best_dist_sq)
+    best_target_rgb = np.where(better_v[..., np.newaxis], nearest_v_rgb, best_target_rgb)
+
+    nearest_dist = np.sqrt(best_dist_sq)
 
     # Smoothstep blend factor: 0 inside gamut, ramps to 1 far outside
-    # Threshold chosen in OKLab LCH-weighted space: 0.05 ≈ just-noticeable difference
+    # Threshold chosen in OKLab space: 0.05 ≈ just-noticeable difference
     _THRESHOLD = 0.05
     _THRESHOLD_MAX = 0.20
-    t = np.clip((nearest_dist - _THRESHOLD) / (_THRESHOLD_MAX - _THRESHOLD), 0.0, 1.0)
-    blend_factor = t * t * (3.0 - 2.0 * t) * strength  # smoothstep × strength
+    blend_t = np.clip((nearest_dist - _THRESHOLD) / (_THRESHOLD_MAX - _THRESHOLD), 0.0, 1.0)
+    blend_factor = blend_t * blend_t * (3.0 - 2.0 * blend_t) * strength  # smoothstep × strength
 
-    # Blend toward nearest palette color in linear RGB
-    nearest_rgb = palette_linear[nearest_idx]  # (H, W, 3)
-    result = pixels_linear + blend_factor[..., np.newaxis] * (nearest_rgb - pixels_linear)
+    result = pixels_linear + blend_factor[..., np.newaxis] * (best_target_rgb - pixels_linear)
 
     clipped: np.ndarray = np.clip(result, 0.0, 1.0)
     return clipped
