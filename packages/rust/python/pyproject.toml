@@ -1,0 +1,21 @@
+[build-system]
+requires = ["maturin>=1.0,<2.0"]
+build-backend = "maturin"
+
+[project]
+name = "epaper-dithering-rs"
+version = "0.1.0"
+description = "Rust-backed dithering core for e-paper displays"
+requires-python = ">=3.11"
+dependencies = [
+    "pillow>=12.1.1",
+]
+
+[tool.maturin]
+features = ["pyo3/extension-module"]
+module-name = "epaper_dithering_rs"
+
+[dependency-groups]
+dev = [
+    "maturin>=1.12.6",
+]

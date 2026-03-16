@@ -1,0 +1,3 @@
+[workspace]
+members = ["core", "python", "wasm"]
+resolver = "2"
