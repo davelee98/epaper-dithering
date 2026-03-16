@@ -1,0 +1,294 @@
+#!/usr/bin/env python3
+"""Pipeline visualization: saves one image per dithering step for inspection.
+
+Usage:
+    uv run scripts/pipeline.py [options] [image1.jpg image2.jpg ...]
+
+Options:
+    --tc auto|0|0.5|1.0     Tone compression  (default: auto)
+    --gc auto|0|0.5|1.0     Gamut compression (default: auto)
+    --palette SPECTRA_V2|SPECTRA_V1|BWRY_3_97|...  (default: SPECTRA_V2)
+    --mode BURKES|FLOYD_STEINBERG|ATKINSON|...      (default: BURKES)
+
+Output: pipeline_out/pipeline_<name>_tc<tc>_gc<gc>.png — a vertical strip:
+    1. Input (sRGB)
+    2. After sRGB→linear   + luminance histogram
+    3. After tone compression + luminance histogram
+    4. After gamut compression | OKLab movement heatmap
+    5. Direct palette map (no error diffusion)
+    6. Final dithered output
+
+Defaults to marienplatz.jpg if no image paths given.
+"""
+
+from __future__ import annotations
+
+import argparse
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
+
+import epaper_dithering as _lib
+import numpy as np
+from epaper_dithering import DitherMode
+from epaper_dithering.algorithms import get_palette_colors
+from epaper_dithering.color_space import linear_to_srgb, srgb_to_linear
+from epaper_dithering.color_space_lab import rgb_to_lab
+from epaper_dithering.tone_map import (
+    auto_compress_dynamic_range,
+    auto_gamut_compress,
+    compress_dynamic_range,
+    gamut_compress,
+)
+from PIL import Image, ImageDraw, ImageFont
+
+# ── Layout constants ──────────────────────────────────────────────────────────
+WIDTH, HEIGHT = 800, 480
+LABEL_H = 20
+HIST_H = 80
+
+# ── Luminance weights (ITU-R BT.709) ─────────────────────────────────────────
+_WR, _WG, _WB = 0.2126729, 0.7151522, 0.0721750
+
+# ── Available palettes ────────────────────────────────────────────────────────
+PALETTES: dict[str, _lib.ColorPalette] = {
+    "SPECTRA_V2": _lib.SPECTRA_7_3_6COLOR_V2,
+    "SPECTRA_V1": _lib.SPECTRA_7_3_6COLOR,
+    "BWRY_3_97": _lib.BWRY_3_97,
+    "BWRY_4_2": _lib.BWRY_4_2,
+    "MONO_4_26": _lib.MONO_4_26,
+    "SOLUM_BWR": _lib.SOLUM_BWR,
+    "HANSHOW_BWR": _lib.HANSHOW_BWR,
+    "HANSHOW_BWY": _lib.HANSHOW_BWY,
+}
+
+# ── Available dither modes ────────────────────────────────────────────────────
+MODES: dict[str, DitherMode] = {m.name: m for m in DitherMode}
+
+
+# ── Helpers ───────────────────────────────────────────────────────────────────
+
+
+def parse_compression(val: str) -> float | str:
+    """Parse 'auto', '0', '0.5', '1.0' → "auto" or float."""
+    if val.lower() == "auto":
+        return "auto"
+    return float(val)
+
+
+def fmt(val: float | str) -> str:
+    return val if isinstance(val, str) else f"{val:.2g}"
+
+
+def load_font(size: int = 13) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
+    for name in ("DejaVuSans.ttf", "Arial.ttf", "FreeSans.ttf"):
+        try:
+            return ImageFont.truetype(name, size)
+        except OSError:
+            pass
+    return ImageFont.load_default()
+
+
+def lum(px: np.ndarray) -> np.ndarray:
+    return _WR * px[:, :, 0] + _WG * px[:, :, 1] + _WB * px[:, :, 2]
+
+
+def to_pil(pixels_linear: np.ndarray) -> Image.Image:
+    srgb = linear_to_srgb(np.clip(pixels_linear, 0.0, 1.0).astype(np.float32))
+    return Image.fromarray(srgb, "RGB")
+
+
+def add_label(img: Image.Image, text: str, font: ImageFont.ImageFont) -> Image.Image:
+    out = Image.new("RGB", (img.width, img.height + LABEL_H), (20, 20, 20))
+    out.paste(img, (0, LABEL_H))
+    ImageDraw.Draw(out).text((6, 4), text, fill=(220, 220, 220), font=font)
+    return out
+
+
+def with_histogram(
+    img: Image.Image,
+    Y: np.ndarray,
+    black_Y: float,
+    white_Y: float,
+    font: ImageFont.ImageFont,
+) -> Image.Image:
+    w = img.width
+    strip = Image.new("RGB", (w, HIST_H), (30, 30, 30))
+    draw = ImageDraw.Draw(strip)
+
+    hist, _ = np.histogram(Y.ravel(), bins=256, range=(0.0, 1.0))
+    max_count = max(int(hist.max()), 1)
+    bar_w = max(1, w // 256)
+    for i, count in enumerate(hist):
+        x = int(i * w / 256)
+        bh = int((count / max_count) * (HIST_H - 4))
+        draw.rectangle([x, HIST_H - bh - 2, x + bar_w - 1, HIST_H - 2], fill=(130, 130, 130))
+
+    def vline(val: float, color: tuple[int, int, int], label: str) -> None:
+        x = int(val * w)
+        draw.line([(x, 0), (x, HIST_H)], fill=color, width=2)
+        draw.text((x + 3, 2), label, fill=color, font=font)
+
+    p2 = float(np.percentile(Y, 2))
+    p98 = float(np.percentile(Y, 98))
+    vline(black_Y, (80, 80, 255), f"disp_black {black_Y:.3f}")
+    vline(white_Y, (255, 80, 80), f"disp_white {white_Y:.3f}")
+    vline(p2, (0, 220, 220), f"p2={p2:.3f}")
+    vline(p98, (255, 160, 0), f"p98={p98:.3f}")
+
+    combined = Image.new("RGB", (w, img.height + HIST_H))
+    combined.paste(img, (0, 0))
+    combined.paste(strip, (0, img.height))
+    return combined
+
+
+def gamut_heatmap(before: np.ndarray, after: np.ndarray) -> Image.Image:
+    dist = np.sqrt(np.sum((rgb_to_lab(after) - rgb_to_lab(before)) ** 2, axis=-1))
+    scaled = np.clip(dist / 0.3 * 255, 0, 255).astype(np.uint8)
+    rgb = np.zeros((*scaled.shape, 3), dtype=np.uint8)
+    rgb[:, :, 0] = scaled
+    rgb[:, :, 1] = (scaled * 0.25).astype(np.uint8)
+    return Image.fromarray(rgb, "RGB")
+
+
+def apply_tc(pixels_linear: np.ndarray, palette_linear: np.ndarray, tc: float | str) -> tuple[np.ndarray, str]:
+    if tc == 0.0:
+        return pixels_linear, "disabled"
+    if tc == "auto":
+        result = auto_compress_dynamic_range(pixels_linear.copy(), palette_linear)
+        changed = not np.array_equal(result, pixels_linear)
+        return result, "applied" if changed else "SKIPPED (image fits display range)"
+    result = compress_dynamic_range(pixels_linear.copy(), palette_linear, float(tc))
+    return result, f"strength={tc:.2g}"
+
+
+def apply_gc(pixels_linear: np.ndarray, palette_linear: np.ndarray, gc: float | str) -> tuple[np.ndarray, str]:
+    if gc == 0.0:
+        return pixels_linear, "disabled"
+    if gc == "auto":
+        result = auto_gamut_compress(pixels_linear.copy(), palette_linear)
+        return result, "auto"
+    result = gamut_compress(pixels_linear.copy(), palette_linear, float(gc))
+    return result, f"strength={gc:.2g}"
+
+
+# ── Main per-image function ───────────────────────────────────────────────────
+
+
+def run(
+    image_path: Path,
+    palette: _lib.ColorPalette,
+    palette_name: str,
+    tc: float | str,
+    gc: float | str,
+    mode: DitherMode,
+    out_path: Path,
+) -> None:
+    src = Image.open(image_path).convert("RGB").resize((WIDTH, HEIGHT), Image.LANCZOS)
+    font = load_font(13)
+
+    palette_srgb = get_palette_colors(palette)
+    palette_linear = srgb_to_linear(np.array(palette_srgb, dtype=np.float32))
+    black_Y = float(_WR * palette_linear[0, 0] + _WG * palette_linear[0, 1] + _WB * palette_linear[0, 2])
+    white_Y = float(_WR * palette_linear[1, 0] + _WG * palette_linear[1, 1] + _WB * palette_linear[1, 2])
+
+    # ── Step 1: Input ──────────────────────────────────────────────────────────
+    panel1 = add_label(src.copy(), f"1. Input (sRGB)  palette={palette_name}", font)
+
+    # ── Step 2: sRGB→linear ───────────────────────────────────────────────────
+    pixels_srgb = np.array(src, dtype=np.uint8)
+    pixels_linear = srgb_to_linear(pixels_srgb.astype(np.float32))
+    Y2 = lum(pixels_linear)
+    p2_2, p98_2 = float(np.percentile(Y2, 2)), float(np.percentile(Y2, 98))
+    panel2 = with_histogram(to_pil(pixels_linear), Y2, black_Y, white_Y, font)
+    panel2 = add_label(
+        panel2,
+        f"2. After sRGB→linear  (p2={p2_2:.3f}  p98={p98_2:.3f}  |  display: [{black_Y:.3f}, {white_Y:.3f}])",
+        font,
+    )
+
+    # ── Step 3: Tone compression ───────────────────────────────────────────────
+    pixels_tc, tc_note = apply_tc(pixels_linear, palette_linear, tc)
+    Y3 = lum(pixels_tc)
+    p2_3, p98_3 = float(np.percentile(Y3, 2)), float(np.percentile(Y3, 98))
+    panel3 = with_histogram(to_pil(pixels_tc), Y3, black_Y, white_Y, font)
+    panel3 = add_label(
+        panel3,
+        f"3. Tone compression [tc={fmt(tc)} — {tc_note}]  (p2={p2_3:.3f}  p98={p98_3:.3f})",
+        font,
+    )
+
+    # ── Step 4: Gamut compression ─────────────────────────────────────────────
+    pixels_gc, gc_note = apply_gc(pixels_tc, palette_linear, gc)
+    n_moved = int(np.sum(np.any(np.abs(pixels_gc - pixels_tc) > 1e-5, axis=-1)))
+    pct_moved = 100.0 * n_moved / (WIDTH * HEIGHT)
+
+    heatmap = gamut_heatmap(pixels_tc, pixels_gc)
+    half_w = WIDTH // 2
+    side = Image.new("RGB", (WIDTH, HEIGHT))
+    side.paste(to_pil(pixels_gc).resize((half_w, HEIGHT), Image.LANCZOS), (0, 0))
+    side.paste(heatmap.resize((half_w, HEIGHT), Image.LANCZOS), (half_w, 0))
+    d = ImageDraw.Draw(side)
+    d.text((4, 4), "result", fill=(200, 200, 200), font=font)
+    d.text((half_w + 4, 4), f"heatmap: {pct_moved:.1f}% pixels moved", fill=(255, 130, 80), font=font)
+    panel4 = add_label(
+        side,
+        f"4. Gamut compression [gc={fmt(gc)} — {gc_note}]  {n_moved:,} px / {pct_moved:.1f}% affected  |  heatmap",
+        font,
+    )
+
+    # ── Step 5: Direct palette map ────────────────────────────────────────────
+    direct = _lib.dither_image(src, palette, DitherMode.NONE, tone_compression=tc, gamut_compression=gc)
+    panel5 = add_label(
+        direct.convert("RGB"), f"5. Direct palette map (no error diffusion)  tc={fmt(tc)}  gc={fmt(gc)}", font
+    )
+
+    # ── Step 6: Final output ──────────────────────────────────────────────────
+    final = _lib.dither_image(src, palette, mode, tone_compression=tc, gamut_compression=gc)
+    panel6 = add_label(final.convert("RGB"), f"6. Final: {mode.name}  tc={fmt(tc)}  gc={fmt(gc)}", font)
+
+    # ── Assemble vertical strip ───────────────────────────────────────────────
+    panels = [panel1, panel2, panel3, panel4, panel5, panel6]
+    total_h = sum(p.height for p in panels)
+    sheet = Image.new("RGB", (WIDTH, total_h), (10, 10, 10))
+    y = 0
+    for p in panels:
+        sheet.paste(p, (0, y))
+        y += p.height
+
+    sheet.save(out_path)
+    print(f"  → {out_path}  ({sheet.width}×{sheet.height})")
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Pipeline visualization for epaper dithering.")
+    parser.add_argument("images", nargs="*", help="Image paths (default: marienplatz.jpg)")
+    parser.add_argument("--tc", default="auto", help="Tone compression: auto|0|0.5|1.0 (default: auto)")
+    parser.add_argument("--gc", default="auto", help="Gamut compression: auto|0|0.5|1.0 (default: auto)")
+    parser.add_argument("--palette", default="SPECTRA_V2", choices=list(PALETTES), help="Palette (default: SPECTRA_V2)")
+    parser.add_argument("--mode", default="BURKES", choices=list(MODES), help="Dither mode (default: BURKES)")
+    args = parser.parse_args()
+
+    tc = parse_compression(args.tc)
+    gc = parse_compression(args.gc)
+    palette = PALETTES[args.palette]
+    mode = MODES[args.mode]
+
+    here = Path(__file__).parent.parent
+    image_paths = [here / p for p in args.images] if args.images else [here / "marienplatz.jpg"]
+    out_dir = here / "pipeline_out"
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    suffix = f"_tc{fmt(tc)}_gc{fmt(gc)}_{args.palette}"
+    for img_path in image_paths:
+        if not img_path.exists():
+            print(f"  skip (not found): {img_path}")
+            continue
+        out_path = out_dir / f"pipeline_{img_path.stem}{suffix}.png"
+        print(f"Processing {img_path.name}  (tc={fmt(tc)}  gc={fmt(gc)}  palette={args.palette}  mode={args.mode})...")
+        run(img_path, palette, args.palette, tc, gc, mode, out_path)
+
+
+if __name__ == "__main__":
+    main()
