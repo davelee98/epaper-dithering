@@ -1,49 +1,70 @@
-use epaper_dithering_core::algorithms;
+use epaper_dithering_core::enums::{DitherMode, GamutCompression, ToneCompression};
 use epaper_dithering_core::palettes::ColorScheme;
+use epaper_dithering_core::types::ImageBuffer;
+use epaper_dithering_core::dither;
 use wasm_bindgen::prelude::*;
 
-/// Resolve a firmware scheme int, or return a JS error string.
-fn scheme(v: u8) -> Result<ColorScheme, JsValue> {
-    ColorScheme::try_from(v)
-        .map_err(|e| JsValue::from_str(&e.to_string()))
+fn parse_scheme(v: u8) -> Result<ColorScheme, JsValue> {
+    ColorScheme::try_from(v).map_err(|e| JsValue::from_str(&e.to_string()))
 }
 
-/// Apply Floyd-Steinberg error diffusion dithering.
+fn parse_mode(v: u8) -> Result<DitherMode, JsValue> {
+    match v {
+        0 => Ok(DitherMode::None),
+        1 => Ok(DitherMode::Ordered),
+        2 => Ok(DitherMode::FloydSteinberg),
+        3 => Ok(DitherMode::Burkes),
+        4 => Ok(DitherMode::Atkinson),
+        5 => Ok(DitherMode::Stucki),
+        6 => Ok(DitherMode::Sierra),
+        7 => Ok(DitherMode::SierraLite),
+        8 => Ok(DitherMode::JarvisJudiceNinke),
+        _ => Err(JsValue::from_str(&format!("unknown dither mode: {v}"))),
+    }
+}
+
+fn parse_tone(v: Option<f64>) -> ToneCompression {
+    match v {
+        None => ToneCompression::Auto,
+        Some(s) => ToneCompression::Fixed(s),
+    }
+}
+
+fn parse_gamut(v: Option<f64>) -> GamutCompression {
+    match v {
+        Some(s) if s > 0.0 => GamutCompression::Fixed(s),
+        _ => GamutCompression::None,
+    }
+}
+
+/// Dither a flat RGB image for e-paper display.
+///
+/// - `pixels`: flat RGB bytes, row-major (len = width × height × 3)
+/// - `scheme_id`: firmware color scheme (0=mono … 7=grayscale16)
+/// - `mode_id`: dither algorithm (0=none … 8=jjn), default 3 (Burkes)
+/// - `serpentine`: alternate row direction, default true
+/// - `tone_compression`: null = auto, 0.0 = off, 0.0–1.0 = fixed
+/// - `gamut_compression`: null/0.0 = off, 0.0–1.0 = fixed
 ///
 /// Returns a Uint8Array of palette indices (one per pixel).
-/// Throws a string error if `scheme_id` is invalid.
 #[wasm_bindgen]
-pub fn floyd_steinberg(
+pub fn dither_image(
     pixels: &[u8],
     width: usize,
-    height: usize,
     scheme_id: u8,
+    mode_id: u8,
     serpentine: bool,
+    tone_compression: Option<f64>,
+    gamut_compression: Option<f64>,
 ) -> Result<Vec<u8>, JsValue> {
-    Ok(algorithms::floyd_steinberg(pixels, width, height, scheme(scheme_id)?.palette(), serpentine))
-}
-
-#[wasm_bindgen]
-pub fn atkinson(pixels: &[u8], width: usize, height: usize, scheme_id: u8, serpentine: bool) -> Result<Vec<u8>, JsValue> {
-    Ok(algorithms::atkinson(pixels, width, height, scheme(scheme_id)?.palette(), serpentine))
-}
-#[wasm_bindgen]
-pub fn burkes(pixels: &[u8], width: usize, height: usize, scheme_id: u8, serpentine: bool) -> Result<Vec<u8>, JsValue> {
-    Ok(algorithms::burkes(pixels, width, height, scheme(scheme_id)?.palette(), serpentine))
-}
-#[wasm_bindgen]
-pub fn stucki(pixels: &[u8], width: usize, height: usize, scheme_id: u8, serpentine: bool) -> Result<Vec<u8>, JsValue> {
-    Ok(algorithms::stucki(pixels, width, height, scheme(scheme_id)?.palette(), serpentine))
-}
-#[wasm_bindgen]
-pub fn sierra(pixels: &[u8], width: usize, height: usize, scheme_id: u8, serpentine: bool) -> Result<Vec<u8>, JsValue> {
-    Ok(algorithms::sierra(pixels, width, height, scheme(scheme_id)?.palette(), serpentine))
-}
-#[wasm_bindgen]
-pub fn sierra_lite(pixels: &[u8], width: usize, height: usize, scheme_id: u8, serpentine: bool) -> Result<Vec<u8>, JsValue> {
-    Ok(algorithms::sierra_lite(pixels, width, height, scheme(scheme_id)?.palette(), serpentine))
-}
-#[wasm_bindgen]
-pub fn jarvis_judice_ninke(pixels: &[u8], width: usize, height: usize, scheme_id: u8, serpentine: bool) -> Result<Vec<u8>, JsValue> {
-    Ok(algorithms::jarvis_judice_ninke(pixels, width, height, scheme(scheme_id)?.palette(), serpentine))
+    let palette = parse_scheme(scheme_id)?.palette();
+    let img = ImageBuffer::new(pixels, width);
+    Ok(dither(
+        &img,
+        palette,
+        parse_mode(mode_id)?,
+        serpentine,
+        parse_tone(tone_compression),
+        parse_gamut(gamut_compression),
+    ))
 }
