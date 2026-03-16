@@ -1,18 +1,20 @@
 /// Quick visual test: dither a real image and save the result.
 ///
 /// Usage:
-///   cargo run --example dither <input> [output] [scheme] [mode]
+///   cargo run --example dither <input> [output] [scheme] [mode] [tone] [gamut]
 ///
 /// Examples:
 ///   cargo run --example dither photo.jpg
-///   cargo run --example dither photo.jpg out.png bwr floyd_steinberg
-///   cargo run --example dither photo.jpg out.png spectra stucki
+///   cargo run --example dither photo.jpg out.png spectra stucki auto none
+///   cargo run --example dither photo.jpg out.png spectra stucki 0.8 0.5
 ///
 /// Schemes: mono, bwr, bwy, bwry, bwgbry, grayscale4, grayscale8, grayscale16
 ///          spectra, spectra_v2, mono_4_26, bwry_4_2, bwry_3_97, solum_bwr, hanshow_bwr, hanshow_bwy
 /// Modes:   none, ordered, floyd_steinberg, burkes, atkinson, stucki, sierra, sierra_lite, jjn
+/// Tone:    auto, none, 0.0–1.0  (default: auto)
+/// Gamut:   none, auto, 0.0–1.0  (default: none)
 
-use epaper_dithering_core::enums::DitherMode;
+use epaper_dithering_core::enums::{DitherMode, GamutCompression, ToneCompression};
 use epaper_dithering_core::measured_palettes::{
     BWRY_3_97, BWRY_4_2, HANSHOW_BWR, HANSHOW_BWY, MONO_4_26, SOLUM_BWR, SPECTRA_7_3_6COLOR,
     SPECTRA_7_3_6COLOR_V2,
@@ -34,6 +36,8 @@ fn main() {
     let output_path = args.get(2).map(String::as_str).unwrap_or("dithered.png");
     let scheme_name = args.get(3).map(String::as_str).unwrap_or("bwr");
     let mode_name   = args.get(4).map(String::as_str).unwrap_or("burkes");
+    let tone_name   = args.get(5).map(String::as_str).unwrap_or("auto");
+    let gamut_name  = args.get(6).map(String::as_str).unwrap_or("none");
 
     let palette: &Palette = match scheme_name {
         "mono"         => ColorScheme::Mono.palette(),
@@ -78,11 +82,29 @@ fn main() {
     let (width, height) = img.dimensions();
     let buf = ImageBuffer::new(img.as_raw(), width as usize);
 
+    let tone = match tone_name {
+        "auto"         => ToneCompression::Auto,
+        "none" | "0"   => ToneCompression::Fixed(0.0),
+        s => match s.parse::<f64>() {
+            Ok(v)  => ToneCompression::Fixed(v),
+            Err(_) => { eprintln!("Unknown tone: {s}"); std::process::exit(1); }
+        },
+    };
+
+    let gamut = match gamut_name {
+        "none" | "0"  => GamutCompression::None,
+        "auto" | "1"  => GamutCompression::Auto,
+        s => match s.parse::<f64>() {
+            Ok(v)  => GamutCompression::Fixed(v),
+            Err(_) => { eprintln!("Unknown gamut: {s}"); std::process::exit(1); }
+        },
+    };
+
     println!("Input:  {input_path} ({width}x{height})");
-    println!("Scheme: {scheme_name}  Mode: {mode_name}");
+    println!("Scheme: {scheme_name}  Mode: {mode_name}  Tone: {tone_name}  Gamut: {gamut_name}");
 
     let t0 = std::time::Instant::now();
-    let indices = dither(&buf, palette, mode, true);
+    let indices = dither(&buf, palette, mode, true, tone, gamut);
     let elapsed = t0.elapsed();
 
     println!("Dither: {:.1}ms  ({} mpx/s)",
