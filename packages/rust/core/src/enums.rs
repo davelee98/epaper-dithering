@@ -1,6 +1,7 @@
 use crate::algorithms::{
     Kernel, ATKINSON, BURKES, FLOYD_STEINBERG, JARVIS_JUDICE_NINKE, SIERRA, SIERRA_LITE, STUCKI,
 };
+use crate::error::DitherError;
 use crate::palettes::Palette;
 use crate::tone_map;
 
@@ -9,10 +10,10 @@ use crate::tone_map;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum DitherMode {
     None           = 0,
-    Ordered        = 1,
-    FloydSteinberg = 2,
     #[default]
-    Burkes         = 3,
+    Burkes         = 1,
+    Ordered        = 2,
+    FloydSteinberg = 3,
     Atkinson       = 4,
     Stucki         = 5,
     Sierra         = 6,
@@ -66,6 +67,25 @@ impl GamutCompression {
     }
 
 
+}
+
+impl TryFrom<u8> for DitherMode {
+    type Error = DitherError;
+
+    fn try_from(v: u8) -> Result<Self, Self::Error> {
+        match v {
+            0 => Ok(DitherMode::None),
+            1 => Ok(DitherMode::Burkes),
+            2 => Ok(DitherMode::Ordered),
+            3 => Ok(DitherMode::FloydSteinberg),
+            4 => Ok(DitherMode::Atkinson),
+            5 => Ok(DitherMode::Stucki),
+            6 => Ok(DitherMode::Sierra),
+            7 => Ok(DitherMode::SierraLite),
+            8 => Ok(DitherMode::JarvisJudiceNinke),
+            _ => Err(DitherError::UnknownDitherMode(v)),
+        }
+    }
 }
 
 impl DitherMode {

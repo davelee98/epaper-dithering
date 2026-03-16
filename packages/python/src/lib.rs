@@ -1,7 +1,7 @@
-use epaper_dithering_core::enums::{DitherMode, GamutCompression, ToneCompression};
-use epaper_dithering_core::palettes::ColorScheme;
-use epaper_dithering_core::types::ImageBuffer;
 use epaper_dithering_core::dither;
+use epaper_dithering_core::enums::{DitherMode, GamutCompression, ToneCompression};
+use epaper_dithering_core::palettes::{ColorScheme, Palette};
+use epaper_dithering_core::types::ImageBuffer;
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 
@@ -10,18 +10,7 @@ fn parse_scheme(v: u8) -> PyResult<ColorScheme> {
 }
 
 fn parse_mode(v: u8) -> PyResult<DitherMode> {
-    match v {
-        0 => Ok(DitherMode::None),
-        1 => Ok(DitherMode::Ordered),
-        2 => Ok(DitherMode::FloydSteinberg),
-        3 => Ok(DitherMode::Burkes),
-        4 => Ok(DitherMode::Atkinson),
-        5 => Ok(DitherMode::Stucki),
-        6 => Ok(DitherMode::Sierra),
-        7 => Ok(DitherMode::SierraLite),
-        8 => Ok(DitherMode::JarvisJudiceNinke),
-        _ => Err(PyValueError::new_err(format!("unknown dither mode: {v}"))),
-    }
+    DitherMode::try_from(v).map_err(|e| PyValueError::new_err(e.to_string()))
 }
 
 fn parse_tone(v: Option<f64>) -> ToneCompression {
@@ -33,25 +22,12 @@ fn parse_tone(v: Option<f64>) -> ToneCompression {
 
 fn parse_gamut(v: Option<f64>) -> GamutCompression {
     match v {
+        None => GamutCompression::Auto,
         Some(s) if s > 0.0 => GamutCompression::Fixed(s),
         _ => GamutCompression::None,
     }
 }
 
-/// Dither a flat RGB image for e-paper display.
-///
-/// Args:
-///     pixels:           flat RGB bytes, row-major (len = width * height * 3)
-///     width:            image width
-///     height:           image height
-///     scheme_id:        firmware color scheme int (0=mono … 7=grayscale16)
-///     mode_id:          dither mode int (0=none … 8=jjn)
-///     serpentine:       alternate row direction (error diffusion only)
-///     tone_compression: None = auto, 0.0 = off, 0.0–1.0 = fixed strength
-///     gamut_compression: None = off, 0.0–1.0 = fixed strength
-///
-/// Returns:
-///     bytes of palette indices, one per pixel
 #[pyfunction]
 #[pyo3(signature = (pixels, width, height, scheme_id, mode_id=3, serpentine=true, tone_compression=None, gamut_compression=None))]
 fn dither_image(
@@ -66,7 +42,7 @@ fn dither_image(
 ) -> PyResult<Vec<u8>> {
     let palette = parse_scheme(scheme_id)?.palette();
     let img = ImageBuffer::new(pixels, width);
-    let _ = height; // ImageBuffer derives height from buffer length
+    let _ = height;
     Ok(dither(
         &img,
         palette,
@@ -77,8 +53,42 @@ fn dither_image(
     ))
 }
 
+#[pyfunction]
+#[pyo3(signature = (pixels, width, height, palette_bytes, accent_idx=0, mode_id=3, serpentine=true, tone_compression=None, gamut_compression=None))]
+fn dither_image_palette(
+    pixels: &[u8],
+    width: usize,
+    height: usize,
+    palette_bytes: &[u8],
+    accent_idx: usize,
+    mode_id: u8,
+    serpentine: bool,
+    tone_compression: Option<f64>,
+    gamut_compression: Option<f64>,
+) -> PyResult<Vec<u8>> {
+    if palette_bytes.len() % 3 != 0 {
+        return Err(PyValueError::new_err("palette_bytes length must be a multiple of 3"));
+    }
+    let colors: Vec<[u8; 3]> = palette_bytes
+        .chunks_exact(3)
+        .map(|c| [c[0], c[1], c[2]])
+        .collect();
+    let palette = Palette::new(colors, accent_idx);
+    let img = ImageBuffer::new(pixels, width);
+    let _ = height;
+    Ok(dither(
+        &img,
+        &palette,
+        parse_mode(mode_id)?,
+        serpentine,
+        parse_tone(tone_compression),
+        parse_gamut(gamut_compression),
+    ))
+}
+
 #[pymodule]
-fn epaper_dithering_rs(m: &Bound<'_, PyModule>) -> PyResult<()> {
+fn _rs(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(dither_image, m)?)?;
+    m.add_function(wrap_pyfunction!(dither_image_palette, m)?)?;
     Ok(())
 }

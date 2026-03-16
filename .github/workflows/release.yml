@@ -23,64 +23,98 @@ jobs:
       - uses: googleapis/release-please-action@v4
         id: release
         with:
-          # Use manifest-based config for monorepo
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
 
-  # Publish Python package to PyPI
-  publish-python:
+  # ── Python: build wheels for each platform ──────────────────────────────────
+
+  build-python-wheels:
+    needs: release-please
+    if: ${{ needs.release-please.outputs.python-release-created }}
+    name: Build wheels (${{ matrix.target }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64
+          - os: ubuntu-latest
+            target: aarch64
+          - os: ubuntu-latest
+            target: armv7
+          - os: macos-latest
+            target: universal2-apple-darwin
+          - os: windows-latest
+            target: x86_64
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: PyO3/maturin-action@v1
+        with:
+          working-directory: packages/python
+          target: ${{ matrix.target }}
+          manylinux: auto
+          args: --release --out dist --find-interpreter
+          sccache: true
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wheels-${{ matrix.target }}
+          path: packages/python/dist
+
+  build-python-sdist:
     needs: release-please
     if: ${{ needs.release-please.outputs.python-release-created }}
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: packages/python
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: PyO3/maturin-action@v1
         with:
-          python-version: "3.11"
+          working-directory: packages/python
+          command: sdist
+          args: --out dist
 
-      - name: Install uv
-        uses: astral-sh/setup-uv@v4
-
-      - name: Install dependencies
-        run: uv sync
-
-      - name: Build package
-        run: uv build
-
-      - name: Publish to PyPI
-        uses: pypa/gh-action-pypi-publish@release/v1
+      - uses: actions/upload-artifact@v4
         with:
-          packages-dir: packages/python/dist/
+          name: wheels-sdist
+          path: packages/python/dist
 
-  # Publish JavaScript package to npm
+  publish-python:
+    needs: [build-python-wheels, build-python-sdist]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: wheels-*
+          merge-multiple: true
+          path: dist
+
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist/
+
+  # ── JavaScript ───────────────────────────────────────────────────────────────
+
   publish-javascript:
     needs: release-please
     if: ${{ needs.release-please.outputs.javascript-release-created }}
     runs-on: ubuntu-latest
     permissions:
-      id-token: write  # Required for npm provenance
+      id-token: write
       contents: read
     defaults:
       run:
         working-directory: packages/javascript
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: '25'
           registry-url: 'https://registry.npmjs.org'
 
-      - name: Setup Bun
-        uses: oven-sh/setup-bun@v2
+      - uses: oven-sh/setup-bun@v2
 
       - name: Install dependencies
         run: bun install

@@ -228,6 +228,23 @@ pub fn jarvis_judice_ninke(pixels: &[u8], w: usize, h: usize, palette: &Palette,
     error_diffusion_dither(pixels, w, h, palette, &JARVIS_JUDICE_NINKE, serpentine)
 }
 
+// ── Direct palette map (no dithering) ────────────────────────────────────────
+
+/// Nearest-color mapping with no dithering. Each pixel maps independently.
+pub fn direct_map(pixels: &[u8], palette: &Palette) -> Vec<u8> {
+    let (_, palette_lab) = build_palette_lab(palette);
+    pixels
+        .par_chunks(3)
+        .map(|rgb| {
+            let r = srgb_channel_to_linear(rgb[0]);
+            let g = srgb_channel_to_linear(rgb[1]);
+            let b = srgb_channel_to_linear(rgb[2]);
+            let lab = rgb_to_oklab(r, g, b);
+            match_pixel_lch(lab, &palette_lab) as u8
+        })
+        .collect()
+}
+
 // ── Ordered (Bayer) dithering ─────────────────────────────────────────────────
 
 // 4×4 Bayer matrix, normalized to [-0.5, 0.5]. Indexed as [y % 4][x % 4].

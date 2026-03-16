@@ -3,14 +3,15 @@ use std::fmt;
 /// Errors that can occur during dithering operations.
 #[derive(Debug, PartialEq)]
 pub enum DitherError {
-    /// The firmware integer does not correspond to any known ColorScheme.
     UnknownColorScheme(u8),
+    UnknownDitherMode(u8),
 }
 
 impl fmt::Display for DitherError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            DitherError::UnknownColorScheme(v) => write!(f, "unknown color scheme: {}", v)
+            DitherError::UnknownColorScheme(v) => write!(f, "unknown color scheme: {v}"),
+            DitherError::UnknownDitherMode(v) => write!(f, "unknown dither mode: {v}"),
         }
     }
 }

@@ -2,11 +2,20 @@
 ///
 /// `ColorScheme` integer values are firmware API contracts — never change them.
 
+use std::borrow::Cow;
+
 use crate::error::DitherError;
 
 pub struct Palette {
-    pub colors: &'static [[u8; 3]], // sRGB [R, G, B] for each ink color
-    pub accent_idx: usize,          // index of the "accent" color in `colors`
+    pub colors: Cow<'static, [[u8; 3]]>, // sRGB [R, G, B] for each ink color
+    pub accent_idx: usize,               // index of the "accent" color in `colors`
+}
+
+impl Palette {
+    /// Construct a runtime palette from owned color data.
+    pub fn new(colors: Vec<[u8; 3]>, accent_idx: usize) -> Self {
+        Self { colors: Cow::Owned(colors), accent_idx }
+    }
 }
 
 /// E-paper color scheme. Integer discriminants match OpenDisplay firmware.
@@ -26,46 +35,46 @@ pub enum ColorScheme {
 // ── Palette data ─────────────────────────────────────────────────────────────
 
 static PALETTE_MONO: Palette = Palette {
-    colors: &[[0, 0, 0], [255, 255, 255]],
+    colors: Cow::Borrowed(&[[0, 0, 0], [255, 255, 255]]),
     accent_idx: 0,
 };
 static PALETTE_BWR: Palette = Palette {
-    colors: &[[0, 0, 0], [255, 255, 255], [255, 0, 0]],
+    colors: Cow::Borrowed(&[[0, 0, 0], [255, 255, 255], [255, 0, 0]]),
     accent_idx: 2,
 };
 static PALETTE_BWY: Palette = Palette {
-    colors: &[[0, 0, 0], [255, 255, 255], [255, 255, 0]],
+    colors: Cow::Borrowed(&[[0, 0, 0], [255, 255, 255], [255, 255, 0]]),
     accent_idx: 2,
 };
 static PALETTE_BWRY: Palette = Palette {
-    colors: &[[0, 0, 0], [255, 255, 255], [255, 255, 0], [255, 0, 0]],
+    colors: Cow::Borrowed(&[[0, 0, 0], [255, 255, 255], [255, 255, 0], [255, 0, 0]]),
     accent_idx: 3,
 };
 static PALETTE_BWGBRY: Palette = Palette {
-    colors: &[
+    colors: Cow::Borrowed(&[
         [0, 0, 0], [255, 255, 255], [255, 255, 0],
         [255, 0, 0], [0, 0, 255], [0, 255, 0],
-    ],
+    ]),
     accent_idx: 3,
 };
 static PALETTE_GRAYSCALE4: Palette = Palette {
-    colors: &[[0, 0, 0], [85, 85, 85], [170, 170, 170], [255, 255, 255]],
+    colors: Cow::Borrowed(&[[0, 0, 0], [85, 85, 85], [170, 170, 170], [255, 255, 255]]),
     accent_idx: 0,
 };
 static PALETTE_GRAYSCALE8: Palette = Palette {
-    colors: &[
+    colors: Cow::Borrowed(&[
         [0, 0, 0], [36, 36, 36], [73, 73, 73], [109, 109, 109],
         [146, 146, 146], [182, 182, 182], [219, 219, 219], [255, 255, 255],
-    ],
+    ]),
     accent_idx: 0,
 };
 static PALETTE_GRAYSCALE16: Palette = Palette {
-    colors: &[
+    colors: Cow::Borrowed(&[
         [0, 0, 0],   [17, 17, 17],  [34, 34, 34],  [51, 51, 51],
         [68, 68, 68],  [85, 85, 85],  [102, 102, 102], [119, 119, 119],
         [136, 136, 136],[153, 153, 153],[170, 170, 170],[187, 187, 187],
         [204, 204, 204],[221, 221, 221],[238, 238, 238],[255, 255, 255],
-    ],
+    ]),
     accent_idx: 0,
 };
 

@@ -9,18 +9,7 @@ fn parse_scheme(v: u8) -> Result<ColorScheme, JsValue> {
 }
 
 fn parse_mode(v: u8) -> Result<DitherMode, JsValue> {
-    match v {
-        0 => Ok(DitherMode::None),
-        1 => Ok(DitherMode::Ordered),
-        2 => Ok(DitherMode::FloydSteinberg),
-        3 => Ok(DitherMode::Burkes),
-        4 => Ok(DitherMode::Atkinson),
-        5 => Ok(DitherMode::Stucki),
-        6 => Ok(DitherMode::Sierra),
-        7 => Ok(DitherMode::SierraLite),
-        8 => Ok(DitherMode::JarvisJudiceNinke),
-        _ => Err(JsValue::from_str(&format!("unknown dither mode: {v}"))),
-    }
+    DitherMode::try_from(v).map_err(|e| JsValue::from_str(&e.to_string()))
 }
 
 fn parse_tone(v: Option<f64>) -> ToneCompression {

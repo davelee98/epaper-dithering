@@ -10,12 +10,21 @@ pub mod types;
 
 use crate::color_space::{linear_channel_to_srgb, srgb_channel_to_linear};
 use crate::enums::{DitherMode, GamutCompression, ToneCompression};
+use crate::palettes::Palette;
 use crate::types::{AsPalette, ImageBuffer};
 
 // ColorScheme needs both palettes and types modules, so the impl lives here.
 impl AsPalette for palettes::ColorScheme {
     fn as_palette(&self) -> &palettes::Palette {
         self.palette()
+    }
+}
+
+fn dispatch(data: &[u8], width: usize, height: usize, p: &Palette, mode: DitherMode, serpentine: bool) -> Vec<u8> {
+    match mode {
+        DitherMode::None => algorithms::direct_map(data, p),
+        DitherMode::Ordered => algorithms::ordered_dither(data, width, p),
+        _ => algorithms::error_diffusion_dither(data, width, height, p, mode.kernel().unwrap(), serpentine),
     }
 }
 
@@ -34,10 +43,7 @@ pub fn dither(
     if matches!(tone, ToneCompression::Fixed(s) if s <= 0.0)
         && matches!(gamut, GamutCompression::None)
     {
-        return match mode.kernel() {
-            None => algorithms::ordered_dither(img.data, img.width, p),
-            Some(k) => algorithms::error_diffusion_dither(img.data, img.width, img.height, p, k, serpentine),
-        };
+        return dispatch(img.data, img.width, img.height, p, mode, serpentine);
     }
 
     // Convert sRGB bytes → linear pixels, apply tone/gamut, convert back
@@ -56,7 +62,6 @@ pub fn dither(
     tone.apply(&mut linear, p);
     gamut.apply(&mut linear, p);
 
-    // Convert back to sRGB bytes
     let processed: Vec<u8> = linear
         .iter()
         .flat_map(|&[r, g, b]| {
@@ -69,15 +74,5 @@ pub fn dither(
         .collect();
 
     let processed_img = ImageBuffer::new(&processed, img.width);
-    match mode.kernel() {
-        None => algorithms::ordered_dither(processed_img.data, processed_img.width, p),
-        Some(k) => algorithms::error_diffusion_dither(
-            processed_img.data,
-            processed_img.width,
-            processed_img.height,
-            p,
-            k,
-            serpentine,
-        ),
-    }
+    dispatch(processed_img.data, processed_img.width, processed_img.height, p, mode, serpentine)
 }

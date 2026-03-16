@@ -1,6 +1,6 @@
 [build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
+requires = ["maturin>=1.0,<2.0"]
+build-backend = "maturin"
 
 [project]
 name = "epaper-dithering"
@@ -28,17 +28,17 @@ classifiers = [
 
 dependencies = [
     "pillow>=10.0.0",
-    "numpy>=1.24.0",
 ]
 
 [project.optional-dependencies]
 test = [
     "pytest>=9.0.2",
-    "pytest-cov>=7.0.0"
+    "pytest-cov>=7.0.0",
+    "numpy>=1.24.0",
 ]
 dev = [
     "mypy>=1.19.1",
-    "ruff>=0.14.10"
+    "ruff>=0.14.10",
 ]
 
 [project.urls]
@@ -46,8 +46,10 @@ Homepage = "https://opendisplay.org"
 Repository = "https://github.com/OpenDisplay-org/epaper-dithering"
 Documentation = "https://github.com/OpenDisplay-org/epaper-dithering#readme"
 
-[tool.hatch.build.targets.wheel]
-packages = ["src/epaper_dithering"]
+[tool.maturin]
+module-name = "epaper_dithering._rs"
+python-source = "src"
+features = ["pyo3/extension-module"]
 
 [tool.ruff]
 line-length = 120
@@ -62,6 +64,9 @@ strict = true
 warn_return_any = true
 warn_unused_configs = true
 
+
+[tool.pylint.main]
+ignore-patterns = [".*\\.pyi"]
 
 [tool.pylint.format]
 max-line-length = 120
@@ -83,12 +88,11 @@ max-statements = 60
 [tool.pylint.messages_control]
 disable = [
     "fixme",                      # TODO comments are fine
-    "duplicate-code",             # algorithmic variants share structure by design
-    "consider-using-enumerate",   # numpy indexing patterns don't benefit from enumerate
-    "consider-using-max-builtin", # explicit comparison is clearer for float edge cases
     "import-outside-toplevel",    # pytest lazy imports in test methods
     "too-few-public-methods",     # single-test test classes are fine
     "too-many-function-args",     # false positives from pylint path resolution in monorepo
+    "consider-using-from-import", # import epaper_dithering._rs as _rs is intentional (mypy submodule resolution)
+    "c-extension-no-member",      # compiled extension members are not visible to pylint static analysis
 ]
 
 [tool.pytest.ini_options]
