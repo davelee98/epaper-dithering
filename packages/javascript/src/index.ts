@@ -7,6 +7,7 @@ export {
   fromValue,
   // Measured palettes
   SPECTRA_7_3_6COLOR,
+  SPECTRA_7_3_6COLOR_V2,
   MONO_4_26,
   BWRY_4_2,
   SOLUM_BWR,

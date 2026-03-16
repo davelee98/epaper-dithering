@@ -202,6 +202,21 @@ export const HANSHOW_BWY: ColorPalette = {
 };
 
 // 3.97" BWRY — EP397YR_800x480 (BWRY scheme)
+// 7.3" Spectra™ 6-color (BWGBRY scheme) — v2 measurement
+// Measured: 2026-03-15, iPhone 15 Pro Max RAW + Affinity (v3), A4 paper white reference
+// Method: DNG with linear tone curve, WB from A4 paper, uniform ×2.4 scale
+export const SPECTRA_7_3_6COLOR_V2: ColorPalette = {
+  colors: {
+    black:  { r: 31,  g: 24,  b: 41  },
+    white:  { r: 168, g: 180, b: 182 },
+    yellow: { r: 180, g: 173, b: 0   },
+    red:    { r: 113, g: 24,  b: 19  },
+    blue:   { r: 36,  g: 70,  b: 139 },
+    green:  { r: 50,  g: 84,  b: 60  },
+  },
+  accent: 'red',
+};
+
 // Measured: 2026-03-06, iPhone RAW
 // Paper reference RGB(205,205,205); normalization: value × (255/205)
 export const BWRY_3_97: ColorPalette = {
