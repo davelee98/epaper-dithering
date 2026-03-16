@@ -22,10 +22,12 @@ pip install epaper-dithering
 
 ## Features
 
-- **Perceptually Correct**: Uses linear RGB color space with gamma correction for accurate error diffusion
-- **8 Dithering Algorithms**: From simple ordered dithering to high-quality Jarvis-Judice-Ninke
+- **Rust Core**: All dithering runs in a compiled Rust extension — fast enough for 800×480 images in ~30ms
+- **Perceptually Correct**: OKLab color space with LCH-weighted matching — prioritizes hue accuracy, which error diffusion cannot fix after the fact
+- **9 Dithering Algorithms**: From simple ordered dithering to high-quality Jarvis-Judice-Ninke
 - **8 Color Schemes**: Support for mono, 3-color, 4-color, 6-color, and grayscale e-paper displays
 - **Tone Mapping**: Dynamic range compression maps image luminance to the display's actual range for smoother dithering
+- **Gamut Compression**: Pre-dithering gamut compression blends out-of-gamut pixels toward the nearest palette color
 - **Serpentine Scanning**: Reduces directional artifacts in error diffusion (enabled by default)
 - **RGBA Support**: Automatic compositing on white background for transparent images
 
@@ -144,6 +146,23 @@ result = dither_image(img, SPECTRA_7_3_6COLOR, DitherMode.FLOYD_STEINBERG, tone_
 
 Note: `tone_compression` has no effect when using theoretical `ColorScheme` palettes (e.g., `ColorScheme.BWR`), since their black/white values already span the full range.
 
+#### Gamut Compression
+
+Some images contain highly saturated colors that a limited palette simply cannot reproduce (e.g. vivid purple on a BWGBRY display). Without gamut compression, the ditherer tries to mix palette colors to approximate the hue — often producing muddy results. Gamut compression pre-blends out-of-gamut pixels toward the nearest palette color before dithering, giving error diffusion a better starting point.
+
+```python
+# Default: auto gamut compression (activates only when image exceeds palette gamut)
+result = dither_image(img, SPECTRA_7_3_6COLOR, DitherMode.BURKES)
+
+# Fixed strength (0.7–0.9 recommended for very saturated images)
+result = dither_image(img, SPECTRA_7_3_6COLOR, DitherMode.BURKES, gamut_compression=0.8)
+
+# Disable
+result = dither_image(img, SPECTRA_7_3_6COLOR, DitherMode.BURKES, gamut_compression=0.0)
+```
+
+Note: `gamut_compression` also has no effect for theoretical `ColorScheme` palettes.
+
 #### RGBA Images
 
 Images with transparency (RGBA mode) are automatically composited on a white background, matching the typical appearance of e-paper displays:
@@ -179,14 +198,16 @@ result = dither_image(img, SPECTRA_7_3_6COLOR, DitherMode.FLOYD_STEINBERG)
 ```
 
 **Available measured palettes:**
-- `SPECTRA_7_3_6COLOR` - 7.3" Spectra™ 6-color (BWGBRY)
+- `SPECTRA_7_3_6COLOR` - 7.3" Spectra™ 6-color (BWGBRY), v1 measurement
+- `SPECTRA_7_3_6COLOR_V2` - 7.3" Spectra™ 6-color (BWGBRY), v2 measurement (recommended)
 - `MONO_4_26` - 4.26" Monochrome
 - `BWRY_4_2` - 4.2" BWRY
+- `BWRY_3_97` - 3.97" BWRY
 - `SOLUM_BWR` - Solum BWR
 - `HANSHOW_BWR` - Hanshow BWR
 - `HANSHOW_BWY` - Hanshow BWY
 
-**Note**: Pre-defined palettes start with theoretical values. See [CALIBRATION.md](docs/CALIBRATION.md) for measuring your specific display.
+See [CALIBRATION.md](docs/CALIBRATION.md) for measuring your specific display.
 
 ### Creating Custom Measured Palettes
 
@@ -222,8 +243,11 @@ See [docs/CALIBRATION.md](docs/CALIBRATION.md) for detailed measurement procedur
 ## Development
 
 ```bash
-# Install with dev dependencies
+# Install dependencies (requires Rust toolchain: https://rustup.rs)
 uv sync --all-extras
+
+# Build and install the Rust extension (required before running tests)
+uv run maturin develop --release
 
 # Run tests
 uv run pytest tests/ -v

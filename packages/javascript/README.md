@@ -2,18 +2,19 @@
 
 [![npm](https://img.shields.io/npm/v/@opendisplay/epaper-dithering?style=flat-square)](https://www.npmjs.com/package/@opendisplay/epaper-dithering)
 
-High-quality dithering algorithms for e-paper/e-ink displays, implemented in TypeScript. Works in both browser and Node.js environments.
+High-quality dithering algorithms for e-paper/e-ink displays, powered by a Rust/WASM core. Works in both browser and Node.js environments.
 
 ## Features
 
+- **Rust/WASM Core**: Compiled Rust logic bundled inline — no async init, no external files, works everywhere
 - **9 Dithering Algorithms**: From fast ordered dithering to high-quality error diffusion
 - **8 Color Schemes**: MONO, BWR, BWY, BWRY, BWGBRY (Spectra 6), GRAYSCALE\_4/8/16
-- **Measured Palettes**: Use real display-calibrated colors for accurate dithering (SPECTRA\_7\_3\_6COLOR, BWRY\_3\_97, and more)
-- **LCH Color Matching**: Perceptual LAB color space with hue-weighted distance — hue errors can't be recovered by error diffusion, so they're prioritized
+- **Measured Palettes**: Use real display-calibrated colors for accurate dithering (SPECTRA\_7\_3\_6COLOR\_V2, BWRY\_3\_97, and more)
+- **OKLab Color Matching**: Perceptual color space with LCH-weighted distance — hue errors can't be recovered by error diffusion, so they're prioritized
+- **Tone & Gamut Compression**: Fit image dynamic range to display limits; compress out-of-gamut colors before dithering
 - **Serpentine Scanning**: Alternates row direction to eliminate directional artifacts
-- **Universal**: Works in browser (Canvas API) and Node.js (with sharp/jimp)
-- **Zero Dependencies**: Pure TypeScript, no image library dependencies
-- **Fast**: 256-entry sRGB LUT, pre-computed palette LAB arrays, typed array pixel buffers
+- **Universal**: Works in browser (Canvas API) and Node.js (≥18)
+- **Zero Dependencies**: WASM binary bundled inline, no image library required
 
 ## Installation
 
@@ -68,7 +69,7 @@ import { ditherImage, SPECTRA_7_3_6COLOR, BWRY_3_97 } from '@opendisplay/epaper-
 const dithered = ditherImage(imageBuffer, SPECTRA_7_3_6COLOR, DitherMode.BURKES);
 ```
 
-Available measured palettes: `SPECTRA_7_3_6COLOR`, `BWRY_3_97`, `MONO_4_26`, `BWRY_4_2`, `SOLUM_BWR`, `HANSHOW_BWR`, `HANSHOW_BWY`.
+Available measured palettes: `SPECTRA_7_3_6COLOR_V2`, `SPECTRA_7_3_6COLOR`, `BWRY_3_97`, `MONO_4_26`, `BWRY_4_2`, `SOLUM_BWR`, `HANSHOW_BWR`, `HANSHOW_BWY`.
 
 ### Node.js (with sharp)
 
@@ -101,7 +102,7 @@ await sharp(rgbaBuffer, { raw: { width: dithered.width, height: dithered.height,
 
 ## API Reference
 
-### `ditherImage(image, colorScheme, mode?, serpentine?)`
+### `ditherImage(image, colorScheme, mode?, serpentine?, toneCompression?, gamutCompression?)`
 
 | Parameter | Type | Default | Description |
 |---|---|---|---|
@@ -109,6 +110,8 @@ await sharp(rgbaBuffer, { raw: { width: dithered.width, height: dithered.height,
 | `colorScheme` | `ColorScheme \| ColorPalette` | — | Target palette (enum or measured) |
 | `mode` | `DitherMode` | `BURKES` | Dithering algorithm |
 | `serpentine` | `boolean` | `true` | Alternate row direction to reduce artifacts |
+| `toneCompression` | `number \| 'auto'` | `'auto'` | Dynamic range compression. `'auto'` = histogram-based; `0.0` = off; `0–1` = fixed strength. Ignored for `ColorScheme`. |
+| `gamutCompression` | `number \| 'auto'` | `'auto'` | Pre-dithering gamut compression. `'auto'` = activate when image exceeds palette gamut; `0.0` = off; `0.7–0.9` = fixed. Ignored for `ColorScheme`. |
 
 Returns `PaletteImageBuffer`.
 
@@ -178,7 +181,20 @@ bun run dev
 
 Features: drag & drop or paste from clipboard, live re-render on every setting change, timing display, palette swatch preview.
 
+## Development
+
+```bash
+bun install
+
+# When Rust source changes, rebuild the WASM (from repo root):
+wasm-pack build packages/rust/wasm --target bundler --out-dir ../../javascript/src/wasm-core
+
+bun run test        # vitest
+bun run build       # tsup → dist/
+bun run type-check
+```
+
 ## Related Projects
 
-- **Python**: [`epaper-dithering`](https://pypi.org/project/epaper-dithering/) — Python implementation (feature superset)
+- **Python**: [`epaper-dithering`](https://pypi.org/project/epaper-dithering/) — Python package, shares the same Rust core
 - **OpenDisplay**: [`py-opendisplay`](https://github.com/OpenDisplay-org/py-opendisplay) — Python library for OpenDisplay BLE devices

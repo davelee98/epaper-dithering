@@ -1,2 +1,1 @@
-# wasm-pack output is committed so the npm package works without Rust toolchain.
-# Re-generate with: wasm-pack build packages/rust/wasm --target bundler --out-dir ../../javascript/src/wasm-core
+*
