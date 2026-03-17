@@ -18,21 +18,6 @@ pub fn linear_channel_to_srgb(linear: f64) -> u8 {
     (srgb * 255.0).round() as u8
 }
 
-pub fn srgb_to_linear(r: u8, g: u8, b: u8) -> (f64, f64, f64) {
-    (
-        srgb_channel_to_linear(r),
-        srgb_channel_to_linear(g),
-        srgb_channel_to_linear(b),
-    )
-}
-
-pub fn linear_to_srgb(r: f64, g: f64, b: f64) -> (u8, u8, u8) {
-    (
-        linear_channel_to_srgb(r),
-        linear_channel_to_srgb(g),
-        linear_channel_to_srgb(b),
-    )
-}
 
 #[cfg(test)]
 mod tests {

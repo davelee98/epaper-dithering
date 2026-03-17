@@ -59,7 +59,7 @@ impl GamutCompression {
     pub fn apply(self, pixels: &mut [[f64; 3]], palette: &Palette) {
         match self {
             GamutCompression::None => {}
-            GamutCompression::Auto => tone_map::auto_gamut_compress(pixels, palette),
+            GamutCompression::Auto => tone_map::gamut_compress(pixels, palette, 1.0),
             GamutCompression::Fixed(s) => if s > 0.0 {
                 tone_map::gamut_compress(pixels, palette, s)
             }

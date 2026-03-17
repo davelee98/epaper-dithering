@@ -158,13 +158,9 @@ pub fn error_diffusion_dither(
     for y in 0..height {
         // Serpentine: odd rows scan right-to-left
         let reverse = serpentine && y % 2 == 1;
-        let xs: Vec<usize> = if reverse {
-            (0..width).rev().collect()
-        } else {
-            (0..width).collect()
-        };
 
-        for x in xs {
+        for xi in 0..width {
+            let x = if reverse { width - 1 - xi } else { xi };
             let idx = (y * width + x) * 3;
 
             let rs = buf[idx].clamp(0.0, 255.0);

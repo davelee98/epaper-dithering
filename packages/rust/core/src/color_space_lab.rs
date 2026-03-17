@@ -28,7 +28,7 @@ const WL: f64 = 0.5;
 const WC: f64 = 3.0; // scaled for OKLab's C range [0, ~0.4]
 const WH: f64 = 6.0;
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct OkLab {
     pub l: f64,
     pub a: f64,
@@ -62,6 +62,7 @@ pub fn rgb_to_oklab(r: f64, g: f64, b: f64) -> OkLab {
     }
 }
 
+#[derive(Debug, Clone, PartialEq)]
 pub struct PaletteLab {
     pub colors: Vec<OkLab>,
     pub chromas: Vec<f64>,

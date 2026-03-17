@@ -50,7 +50,7 @@ fn assert_regression(
     filename: &str,
     tag: &str,
     mode: DitherMode,
-    palette: impl epaper_dithering_core::types::AsPalette,
+    palette: impl AsRef<epaper_dithering_core::palettes::Palette>,
     tone: ToneCompression,
     gamut: GamutCompression,
 ) {

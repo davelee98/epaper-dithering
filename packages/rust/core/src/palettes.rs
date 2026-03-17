@@ -6,6 +6,7 @@ use std::borrow::Cow;
 
 use crate::error::DitherError;
 
+#[derive(Debug, Clone, PartialEq)]
 pub struct Palette {
     pub colors: Cow<'static, [[u8; 3]]>, // sRGB [R, G, B] for each ink color
     pub accent_idx: usize,               // index of the "accent" color in `colors`
@@ -13,8 +14,25 @@ pub struct Palette {
 
 impl Palette {
     /// Construct a runtime palette from owned color data.
+    ///
+    /// # Panics
+    /// Panics if `colors.len() < 2` or `accent_idx >= colors.len()`.
     pub fn new(colors: Vec<[u8; 3]>, accent_idx: usize) -> Self {
+        assert!(colors.len() >= 2, "palette must have at least 2 colors, got {}", colors.len());
+        assert!(accent_idx < colors.len(), "accent_idx {accent_idx} out of range (len={})", colors.len());
         Self { colors: Cow::Owned(colors), accent_idx }
+    }
+}
+
+impl AsRef<Palette> for Palette {
+    fn as_ref(&self) -> &Palette {
+        self
+    }
+}
+
+impl AsRef<Palette> for ColorScheme {
+    fn as_ref(&self) -> &Palette {
+        (*self).palette()
     }
 }
 

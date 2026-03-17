@@ -11,39 +11,38 @@ pub mod types;
 use crate::color_space::{linear_channel_to_srgb, srgb_channel_to_linear};
 use crate::enums::{DitherMode, GamutCompression, ToneCompression};
 use crate::palettes::Palette;
-use crate::types::{AsPalette, ImageBuffer};
+use crate::types::ImageBuffer;
 
-// ColorScheme needs both palettes and types modules, so the impl lives here.
-impl AsPalette for palettes::ColorScheme {
-    fn as_palette(&self) -> &palettes::Palette {
-        self.palette()
-    }
-}
-
-fn dispatch(data: &[u8], width: usize, height: usize, p: &Palette, mode: DitherMode, serpentine: bool) -> Vec<u8> {
+fn dispatch(img: &ImageBuffer, p: &Palette, mode: DitherMode, serpentine: bool) -> Vec<u8> {
     match mode {
-        DitherMode::None => algorithms::direct_map(data, p),
-        DitherMode::Ordered => algorithms::ordered_dither(data, width, p),
-        _ => algorithms::error_diffusion_dither(data, width, height, p, mode.kernel().unwrap(), serpentine),
+        DitherMode::None    => algorithms::direct_map(img.data, p),
+        DitherMode::Ordered => algorithms::ordered_dither(img.data, img.width, p),
+        DitherMode::FloydSteinberg    => algorithms::error_diffusion_dither(img.data, img.width, img.height, p, &algorithms::FLOYD_STEINBERG,      serpentine),
+        DitherMode::Burkes            => algorithms::error_diffusion_dither(img.data, img.width, img.height, p, &algorithms::BURKES,              serpentine),
+        DitherMode::Atkinson          => algorithms::error_diffusion_dither(img.data, img.width, img.height, p, &algorithms::ATKINSON,            serpentine),
+        DitherMode::Stucki            => algorithms::error_diffusion_dither(img.data, img.width, img.height, p, &algorithms::STUCKI,              serpentine),
+        DitherMode::Sierra            => algorithms::error_diffusion_dither(img.data, img.width, img.height, p, &algorithms::SIERRA,              serpentine),
+        DitherMode::SierraLite        => algorithms::error_diffusion_dither(img.data, img.width, img.height, p, &algorithms::SIERRA_LITE,         serpentine),
+        DitherMode::JarvisJudiceNinke => algorithms::error_diffusion_dither(img.data, img.width, img.height, p, &algorithms::JARVIS_JUDICE_NINKE, serpentine),
     }
 }
 
 /// Dither an image for e-paper display.
 pub fn dither(
     img: &ImageBuffer,
-    palette: impl AsPalette,
+    palette: impl AsRef<Palette>,
     mode: DitherMode,
     serpentine: bool,
     tone: ToneCompression,
     gamut: GamutCompression,
 ) -> Vec<u8> {
-    let p = palette.as_palette();
+    let p = palette.as_ref();
 
     // Fast path: no preprocessing needed
     if matches!(tone, ToneCompression::Fixed(s) if s <= 0.0)
         && matches!(gamut, GamutCompression::None)
     {
-        return dispatch(img.data, img.width, img.height, p, mode, serpentine);
+        return dispatch(img, p, mode, serpentine);
     }
 
     // Convert sRGB bytes → linear pixels, apply tone/gamut, convert back
@@ -74,5 +73,5 @@ pub fn dither(
         .collect();
 
     let processed_img = ImageBuffer::new(&processed, img.width);
-    dispatch(processed_img.data, processed_img.width, processed_img.height, p, mode, serpentine)
+    dispatch(&processed_img, p, mode, serpentine)
 }

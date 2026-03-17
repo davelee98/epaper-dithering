@@ -249,10 +249,6 @@ pub fn gamut_compress(pixels: &mut [[f64; 3]], palette: &Palette, strength: f64)
     });
 }
 
-/// Apply gamut compression at full strength (1.0).
-pub fn auto_gamut_compress(pixels: &mut [[f64; 3]], palette: &Palette) {
-    gamut_compress(pixels, palette, 1.0);
-}
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
