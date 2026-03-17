@@ -15,6 +15,11 @@ exclude = ["examples/minzi.jpeg"]
 [dependencies]
 rayon = "1.10"
 
+[[bench]]
+name = "dithering"
+harness = false
+
 [dev-dependencies]
 approx = "0.5"  # float comparisons in tests: assert_relative_eq!
+criterion = { version = "0.5", features = ["html_reports"] }
 image = "0.25"  # image loading/saving for examples
