@@ -133,7 +133,13 @@ export function fromValue(value: number): ColorScheme {
 //   import { ditherImage, SPECTRA_7_3_6COLOR } from '@opendisplay/epaper-dithering';
 //   const result = ditherImage(imageBuffer, SPECTRA_7_3_6COLOR);
 //
-// Color order MUST match the corresponding ColorScheme palette order.
+// NOTE: RGB values are defined in packages/rust/core/src/measured_palettes.rs
+// (single source of truth). The Python package derives its constants from Rust
+// via FFI at import time. TypeScript cannot do the same (WASM init order), so
+// values here must be kept in sync manually with the Rust source.
+// The WASM `measured_palettes()` function is exposed for future tooling.
+//
+// TO ADD A NEW DISPLAY: update measured_palettes.rs + add the constant below.
 // =============================================================================
 
 // 7.3" Spectra™ 6-color (BWGBRY scheme)

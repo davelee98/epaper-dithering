@@ -10,6 +10,60 @@ use std::borrow::Cow;
 
 use crate::palettes::Palette;
 
+// ── Catalog (used by language bindings to expose named palettes) ──────────────
+
+/// A measured palette entry with its display name and color names.
+/// Language bindings use this to expose palette constants without duplicating values.
+pub struct MeasuredPaletteEntry {
+    pub id: &'static str,
+    pub palette: &'static Palette,
+    pub color_names: &'static [&'static str],
+}
+
+/// All measured palettes. Add new displays here — bindings pick them up automatically.
+pub static CATALOG: &[MeasuredPaletteEntry] = &[
+    MeasuredPaletteEntry {
+        id: "SPECTRA_7_3_6COLOR",
+        palette: &SPECTRA_7_3_6COLOR,
+        color_names: &["black", "white", "yellow", "red", "blue", "green"],
+    },
+    MeasuredPaletteEntry {
+        id: "SPECTRA_7_3_6COLOR_V2",
+        palette: &SPECTRA_7_3_6COLOR_V2,
+        color_names: &["black", "white", "yellow", "red", "blue", "green"],
+    },
+    MeasuredPaletteEntry {
+        id: "MONO_4_26",
+        palette: &MONO_4_26,
+        color_names: &["black", "white"],
+    },
+    MeasuredPaletteEntry {
+        id: "BWRY_4_2",
+        palette: &BWRY_4_2,
+        color_names: &["black", "white", "yellow", "red"],
+    },
+    MeasuredPaletteEntry {
+        id: "BWRY_3_97",
+        palette: &BWRY_3_97,
+        color_names: &["black", "white", "yellow", "red"],
+    },
+    MeasuredPaletteEntry {
+        id: "SOLUM_BWR",
+        palette: &SOLUM_BWR,
+        color_names: &["black", "white", "red"],
+    },
+    MeasuredPaletteEntry {
+        id: "HANSHOW_BWR",
+        palette: &HANSHOW_BWR,
+        color_names: &["black", "white", "red"],
+    },
+    MeasuredPaletteEntry {
+        id: "HANSHOW_BWY",
+        palette: &HANSHOW_BWY,
+        color_names: &["black", "white", "yellow"],
+    },
+];
+
 // ── Spectra 7.3" 6-color ─────────────────────────────────────────────────────
 
 /// Spectra 7.3" 6-color (BWGBRY layout).

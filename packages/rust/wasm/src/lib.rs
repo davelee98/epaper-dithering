@@ -1,7 +1,8 @@
+use epaper_dithering_core::dither;
 use epaper_dithering_core::enums::{DitherMode, GamutCompression, ToneCompression};
+use epaper_dithering_core::measured_palettes::CATALOG;
 use epaper_dithering_core::palettes::{ColorScheme, Palette};
 use epaper_dithering_core::types::ImageBuffer;
-use epaper_dithering_core::dither;
 use wasm_bindgen::prelude::*;
 
 fn parse_scheme(v: u8) -> Result<ColorScheme, JsValue> {
@@ -55,6 +56,32 @@ pub fn dither_image(
         parse_tone(tone_compression),
         parse_gamut(gamut_compression),
     ))
+}
+
+/// Returns all measured palettes as a JSON string.
+///
+/// Format: `[{"id": "SPECTRA_7_3_6COLOR", "colors": [[r,g,b], ...], "color_names": ["black", ...], "accent_idx": 3}, ...]`
+#[wasm_bindgen]
+pub fn measured_palettes() -> String {
+    let entries: Vec<String> = CATALOG
+        .iter()
+        .map(|e| {
+            let colors: Vec<String> = e.palette.colors.iter()
+                .map(|c| format!("[{},{},{}]", c[0], c[1], c[2]))
+                .collect();
+            let names: Vec<String> = e.color_names.iter()
+                .map(|s| format!("\"{}\"", s))
+                .collect();
+            format!(
+                "{{\"id\":\"{}\",\"colors\":[{}],\"color_names\":[{}],\"accent_idx\":{}}}",
+                e.id,
+                colors.join(","),
+                names.join(","),
+                e.palette.accent_idx,
+            )
+        })
+        .collect();
+    format!("[{}]", entries.join(","))
 }
 
 /// Dither a flat RGB image using a measured ColorPalette.

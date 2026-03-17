@@ -1,5 +1,6 @@
 use epaper_dithering_core::dither;
 use epaper_dithering_core::enums::{DitherMode, GamutCompression, ToneCompression};
+use epaper_dithering_core::measured_palettes::CATALOG;
 use epaper_dithering_core::palettes::{ColorScheme, Palette};
 use epaper_dithering_core::types::ImageBuffer;
 use pyo3::exceptions::PyValueError;
@@ -86,9 +87,32 @@ fn dither_image_palette(
     ))
 }
 
+/// Returns all measured palettes from the Rust catalog.
+///
+/// Each entry is `(id, rgb_bytes, color_names, accent_idx)` where:
+/// - `id` is the constant name (e.g. `"SPECTRA_7_3_6COLOR"`)
+/// - `rgb_bytes` is a flat `bytes` of R,G,B values for each color
+/// - `color_names` is a list of color name strings
+/// - `accent_idx` is the index of the accent color in `color_names`
+#[pyfunction]
+fn measured_palettes() -> Vec<(String, Vec<u8>, Vec<String>, usize)> {
+    CATALOG
+        .iter()
+        .map(|e| {
+            (
+                e.id.to_string(),
+                e.palette.colors.iter().flatten().copied().collect(),
+                e.color_names.iter().map(|&s| s.to_string()).collect(),
+                e.palette.accent_idx,
+            )
+        })
+        .collect()
+}
+
 #[pymodule]
 fn _rs(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(dither_image, m)?)?;
     m.add_function(wrap_pyfunction!(dither_image_palette, m)?)?;
+    m.add_function(wrap_pyfunction!(measured_palettes, m)?)?;
     Ok(())
 }
