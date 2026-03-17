@@ -8,6 +8,18 @@
 
 Dithering algorithms for e-paper/e-ink displays. Rust core with Python and JavaScript/TypeScript bindings.
 
+## Examples
+
+![Frankfurt at night — original vs Spectra 6-color with auto tone + gamut compression](docs/examples/frankfurt_before_after.png)
+
+**Dithering algorithms** (Spectra 6-color, Marienplatz U-Bahn station):
+
+![All dithering algorithms compared](docs/examples/algorithms_grid.png)
+
+**Color schemes** (Burkes, river scene):
+
+![All color schemes compared](docs/examples/color_schemes_grid.png)
+
 ## Packages
 
 ### Python (`packages/python/`)
