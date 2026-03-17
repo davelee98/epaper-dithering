@@ -1,10 +1,10 @@
-/// Measured color palettes for real e-paper displays.
-///
-/// These are photographically calibrated — colors reflect what the display
-/// actually produces, not the ideal sRGB values. Use these for best dithering
-/// quality on known hardware.
-///
-/// Color order within each palette matches the Python package (firmware contract).
+//! Measured color palettes for real e-paper displays.
+//!
+//! These are photographically calibrated — colors reflect what the display
+//! actually produces, not the ideal sRGB values. Use these for best dithering
+//! quality on known hardware.
+//!
+//! Color order within each palette matches the Python package (firmware contract).
 
 use std::borrow::Cow;
 

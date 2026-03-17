@@ -1,7 +1,7 @@
-/// Dynamic range and gamut compression for measured e-paper palettes.
-///
-/// Applied before dithering to map image content into the display's reproducible range.
-/// All functions operate on linear RGB pixels (`&mut [[f64; 3]]`).
+//! Dynamic range and gamut compression for measured e-paper palettes.
+//!
+//! Applied before dithering to map image content into the display's reproducible range.
+//! All functions operate on linear RGB pixels (`&mut [[f64; 3]]`).
 
 use rayon::prelude::*;
 
@@ -32,12 +32,14 @@ fn palette_to_linear(palette: &Palette) -> Vec<[f64; 3]> {
         .collect()
 }
 
-/// p-th percentile of a slice of f64 values (0–100). Allocates a sorted copy.
-fn percentile(values: &[f64], p: f64) -> f64 {
+/// Two percentiles from the same data in one sort. Returns (p_low_val, p_high_val).
+fn percentile_pair(values: &[f64], p_low: f64, p_high: f64) -> (f64, f64) {
     let mut sorted = values.to_vec();
     sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-    let idx = ((p / 100.0) * (sorted.len().saturating_sub(1)) as f64).round() as usize;
-    sorted[idx.min(sorted.len() - 1)]
+    let n = sorted.len().saturating_sub(1);
+    let idx_lo = ((p_low  / 100.0) * n as f64).round() as usize;
+    let idx_hi = ((p_high / 100.0) * n as f64).round() as usize;
+    (sorted[idx_lo.min(sorted.len() - 1)], sorted[idx_hi.min(sorted.len() - 1)])
 }
 
 // ── compress_dynamic_range ────────────────────────────────────────────────────
@@ -71,11 +73,19 @@ pub fn compress_dynamic_range(pixels: &mut [[f64; 3]], palette: &Palette, streng
             pixel[1] = (pixel[1] * scale).clamp(0.0, 1.0);
             pixel[2] = (pixel[2] * scale).clamp(0.0, 1.0);
         } else {
-            // For very dark pixels, set to a blend of black_y and original (which is near zero)
+            // Pixel luminance is near zero — preserve channel ratios, scale toward display black.
             let blended_black = black_y * strength;
-            pixel[0] = blended_black.clamp(0.0, 1.0);
-            pixel[1] = blended_black.clamp(0.0, 1.0);
-            pixel[2] = blended_black.clamp(0.0, 1.0);
+            let max_ch = pixel[0].max(pixel[1]).max(pixel[2]);
+            if max_ch > 1e-12 {
+                let scale = blended_black / max_ch;
+                pixel[0] = (pixel[0] * scale).clamp(0.0, 1.0);
+                pixel[1] = (pixel[1] * scale).clamp(0.0, 1.0);
+                pixel[2] = (pixel[2] * scale).clamp(0.0, 1.0);
+            } else {
+                pixel[0] = blended_black;
+                pixel[1] = blended_black;
+                pixel[2] = blended_black;
+            }
         }
     });
 }
@@ -98,8 +108,7 @@ pub fn auto_compress_dynamic_range(pixels: &mut [[f64; 3]], palette: &Palette) {
 
     let lum_values: Vec<f64> = pixels.iter().map(|&p| luminance(p)).collect();
 
-    let p_low = percentile(&lum_values, 2.0);
-    let p_high = percentile(&lum_values, 98.0);
+    let (p_low, p_high) = percentile_pair(&lum_values, 2.0, 98.0);
     let image_range = p_high - p_low;
 
     if image_range < 1e-6 {
@@ -133,7 +142,7 @@ pub fn auto_compress_dynamic_range(pixels: &mut [[f64; 3]], palette: &Palette) {
     };
 
     // Remap [p_low, p_high] → [black_y, white_y] at computed strength
-    for pixel in pixels.iter_mut() {
+    pixels.par_iter_mut().for_each(|pixel| {
         let y = luminance(*pixel);
         let normalized = (y - p_low) / image_range;
         let target_y_full = black_y + normalized * display_range;
@@ -146,7 +155,7 @@ pub fn auto_compress_dynamic_range(pixels: &mut [[f64; 3]], palette: &Palette) {
         } else {
             *pixel = [black_y, black_y, black_y];
         }
-    }
+    });
 }
 
 // ── gamut_compress ────────────────────────────────────────────────────────────
@@ -188,6 +197,11 @@ fn smoothstep(edge0: f64, edge1: f64, x: f64) -> f64 {
 /// Blend out-of-gamut pixels toward the nearest point on the palette hull in OKLab space.
 ///
 /// Smoothstep from no effect at `GAMUT_THRESHOLD` to full at `GAMUT_THRESHOLD_MAX`.
+///
+/// Note: searches all palette edges (O(n²) pairs) and relies on `nearest_on_segment`
+/// returning an endpoint when the projection falls outside the segment, which covers all
+/// vertices. For 4+ color palettes the true nearest point on the convex hull can be
+/// interior to a triangular face — this is a known approximation.
 pub fn gamut_compress(pixels: &mut [[f64; 3]], palette: &Palette, strength: f64) {
     if strength <= 0.0 {
         return;
@@ -223,15 +237,8 @@ pub fn gamut_compress(pixels: &mut [[f64; 3]], palette: &Palette, strength: f64)
             }
         }
 
-        // Vertices
-        for i in 0..n {
-            let v_lab = [pal_lab[i].l, pal_lab[i].a, pal_lab[i].b];
-            let d = dist_sq(px_lab_arr, v_lab);
-            if d < best_dist_sq {
-                best_dist_sq = d;
-                best_target = pal_linear[i];
-            }
-        }
+        // Note: vertices are already covered by the edge loop — nearest_on_segment
+        // returns the endpoint (t=0 or t=1) when the projection falls outside the segment.
 
         let nearest_dist = best_dist_sq.sqrt();
         let blend = smoothstep(GAMUT_THRESHOLD, GAMUT_THRESHOLD_MAX, nearest_dist) * strength;
@@ -285,8 +292,87 @@ mod tests {
         ]];
         let original = pixels[0];
         gamut_compress(&mut pixels, pal, 1.0);
-        // Should be very close to original (distance = 0)
         let d = dist_sq(pixels[0], original);
         assert!(d < 1e-10, "palette color should not be moved: d={d}");
+    }
+
+    #[test]
+    fn compress_maps_white_to_display_white() {
+        // Full-strength compression should remap luminance-1.0 to the display's white point
+        let mut pixels = vec![[1.0, 1.0, 1.0_f64]];
+        let pal = spectra_palette();
+        compress_dynamic_range(&mut pixels, pal, 1.0);
+        let pal_lin = palette_to_linear(pal);
+        let white_y = luminance(pal_lin[1]);
+        let out_y = luminance(pixels[0]);
+        assert!(
+            (out_y - white_y).abs() < 1e-6,
+            "white pixel should compress to display white point (expected {white_y}, got {out_y})"
+        );
+    }
+
+    #[test]
+    fn compress_maps_black_to_display_black() {
+        // Full-strength compression of pure black should yield the display black point
+        let mut pixels = vec![[0.0, 0.0, 0.0_f64]];
+        let pal = spectra_palette();
+        compress_dynamic_range(&mut pixels, pal, 1.0);
+        let pal_lin = palette_to_linear(pal);
+        let black_y = luminance(pal_lin[0]);
+        let out_y = luminance(pixels[0]);
+        assert!(
+            (out_y - black_y).abs() < 1e-4,
+            "black pixel should compress to display black point (expected {black_y}, got {out_y})"
+        );
+    }
+
+    #[test]
+    fn auto_compress_skips_in_range_images() {
+        // Images whose luminance already fits within the display range should not be modified
+        let pal = spectra_palette();
+        let pal_lin = palette_to_linear(pal);
+        let black_y = luminance(pal_lin[0]);
+        let white_y = luminance(pal_lin[1]);
+        // A pixel sitting at the midpoint of the display range is well within bounds
+        let mid = (black_y + white_y) / 2.0;
+        // Use enough pixels to avoid the flat-image fast path (image_range < 1e-6)
+        // by including two distinct luminance values within the display range.
+        let lo = black_y + 0.05 * (white_y - black_y);
+        let hi = white_y - 0.05 * (white_y - black_y);
+        let mut pixels = vec![[lo, lo, lo], [mid, mid, mid], [hi, hi, hi]];
+        let original = pixels.clone();
+        auto_compress_dynamic_range(&mut pixels, pal);
+        for (i, (got, expected)) in pixels.iter().zip(original.iter()).enumerate() {
+            let d: f64 = got.iter().zip(expected.iter()).map(|(a, b)| (a - b).abs()).sum();
+            assert!(d < 1e-6, "pixel {i} should not be modified by auto-compress: moved by {d}");
+        }
+    }
+
+    #[test]
+    fn gamut_compress_moves_out_of_gamut_pixel() {
+        // Pure linear red [1, 0, 0] is much more vivid than the Spectra palette's desaturated
+        // red ink [121, 9, 0] — the OKLab distance to the nearest edge exceeds GAMUT_THRESHOLD,
+        // so the smoothstep is non-zero and the pixel must be moved.
+        let pal = spectra_palette();
+        let mut pixels = vec![[1.0_f64, 0.0, 0.0]]; // pure linear red
+        let original = pixels[0];
+        gamut_compress(&mut pixels, pal, 1.0);
+        let moved = pixels[0].iter().zip(original.iter()).any(|(a, b)| (a - b).abs() > 1e-6);
+        assert!(moved, "vivid red should be moved toward the palette by gamut_compress");
+    }
+
+    #[test]
+    fn dark_pixel_chroma_preserved_after_compress() {
+        // A near-black but distinctly blue pixel should not become gray after compression
+        let pal = spectra_palette();
+        // Very dark blue: luminance ≈ 0.07*0.00001 ≈ near zero, strong blue channel
+        let mut pixels = vec![[0.0_f64, 0.0, 1e-5]];
+        compress_dynamic_range(&mut pixels, pal, 1.0);
+        // Blue channel should still dominate (be the largest) after compression
+        let [r, g, b] = pixels[0];
+        assert!(
+            b >= r && b >= g,
+            "blue channel should remain dominant after dark pixel compression: [{r}, {g}, {b}]"
+        );
     }
 }

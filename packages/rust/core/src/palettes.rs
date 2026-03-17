@@ -1,6 +1,6 @@
-/// Palette definitions and color schemes.
-///
-/// `ColorScheme` integer values are firmware API contracts — never change them.
+//! Palette definitions and color schemes.
+//!
+//! `ColorScheme` integer values are firmware API contracts — never change them.
 
 use std::borrow::Cow;
 

@@ -1,6 +1,6 @@
-/// OKLab color space and LCH-weighted color matching.
-///
-/// LCH weighting: hue errors can't be corrected by diffusion, lightness errors can.
+//! OKLab color space and LCH-weighted color matching.
+//!
+//! LCH weighting: hue errors can't be corrected by diffusion, lightness errors can.
 
 // sRGB -> XYZ matrix (D65 illuminant, BruceLinbloom)
 const M_RGB_XYZ: [[f64; 3]; 3] = [
@@ -129,5 +129,24 @@ mod tests {
         let palette = PaletteLab::from_linear_rgb(&[red_linear, [0.0, 0.7152, 0.0]]);
         let pixel = rgb_to_oklab(red_linear[0], red_linear[1], red_linear[2]);
         assert_eq!(match_pixel_lch(pixel, &palette), 0);
+    }
+
+    #[test]
+    fn lch_weights_favor_hue_over_lightness() {
+        // Target: medium-dark red-ish pixel
+        // Option A (index 0): darker red — same hue, lower lightness
+        // Option B (index 1): neutral gray — same-ish lightness, completely different hue
+        //
+        // With WH=6.0 >> WL=0.5, option A (correct hue) should win over option B.
+        let target         = rgb_to_oklab(0.30, 0.04, 0.04); // medium red
+        let option_a_rgb   = [0.10_f64, 0.012, 0.012];       // darker red — hue match
+        let option_b_rgb   = [0.30_f64, 0.30,  0.30];        // neutral gray — lightness match
+
+        let palette = PaletteLab::from_linear_rgb(&[option_a_rgb, option_b_rgb]);
+        let result = match_pixel_lch(target, &palette);
+        assert_eq!(
+            result, 0,
+            "LCH matching should prefer correct hue (darker red) over correct lightness (gray)"
+        );
     }
 }

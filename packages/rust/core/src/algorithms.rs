@@ -1,4 +1,4 @@
-/// Error diffusion and ordered dithering on raw RGB pixel buffers.
+//! Error diffusion and ordered dithering on raw RGB pixel buffers.
 
 use crate::color_space::srgb_channel_to_linear;
 use crate::color_space_lab::{PaletteLab, match_pixel_lch, rgb_to_oklab};
@@ -151,7 +151,7 @@ pub fn error_diffusion_dither(
     let mut buf: Vec<f64> = pixels.iter().map(|&v| v as f64).collect();
 
     // LUT: u8 sRGB -> linear f64 (avoids powf per pixel in the inner loop)
-    let lut: Vec<f64> = (0u8..=255).map(|v| srgb_channel_to_linear(v)).collect();
+    let lut: Vec<f64> = (0u8..=255).map(srgb_channel_to_linear).collect();
 
     let mut output = vec![0u8; width * height];
 
@@ -171,9 +171,9 @@ pub fn error_diffusion_dither(
             let gs = buf[idx + 1].clamp(0.0, 255.0);
             let bs = buf[idx + 2].clamp(0.0, 255.0);
 
-            let r_lin = lut[rs as usize];
-            let g_lin = lut[gs as usize];
-            let b_lin = lut[bs as usize];
+            let r_lin = lut[rs.round() as usize];
+            let g_lin = lut[gs.round() as usize];
+            let b_lin = lut[bs.round() as usize];
 
             let pixel_lab = rgb_to_oklab(r_lin, g_lin, b_lin);
             let best_idx = match_pixel_lch(pixel_lab, &palette_lab);
@@ -248,11 +248,13 @@ pub fn direct_map(pixels: &[u8], palette: &Palette) -> Vec<u8> {
 // ── Ordered (Bayer) dithering ─────────────────────────────────────────────────
 
 // 4×4 Bayer matrix, normalized to [-0.5, 0.5]. Indexed as [y % 4][x % 4].
+// Values = (bayer_entry / 16.0) - 0.5 for the standard ordered Bayer matrix.
+// Written as exact fractions to keep precision (all are multiples of 1/16).
 const BAYER_4X4: [[f64; 4]; 4] = [
-    [ 0.0/16.0 - 0.5,  8.0/16.0 - 0.5,  2.0/16.0 - 0.5, 10.0/16.0 - 0.5],
-    [12.0/16.0 - 0.5,  4.0/16.0 - 0.5, 14.0/16.0 - 0.5,  6.0/16.0 - 0.5],
-    [ 3.0/16.0 - 0.5, 11.0/16.0 - 0.5,  1.0/16.0 - 0.5,  9.0/16.0 - 0.5],
-    [15.0/16.0 - 0.5,  7.0/16.0 - 0.5, 13.0/16.0 - 0.5,  5.0/16.0 - 0.5],
+    [-0.5000,  0.0000, -0.3750,  0.1250],
+    [ 0.2500, -0.2500,  0.3750, -0.1250],
+    [-0.3125,  0.1875, -0.4375,  0.0625],
+    [ 0.4375, -0.0625,  0.3125, -0.1875],
 ];
 
 /// Ordered (Bayer 4×4) dither. Pixels are independent — parallelized with rayon.
@@ -309,5 +311,66 @@ mod tests {
         let pixels = solid_image(128, 64, 200, 10, 7);
         let out = floyd_steinberg(&pixels, 10, 7, ColorScheme::Bwr.palette(), true);
         assert_eq!(out.len(), 10 * 7);
+    }
+
+    #[test]
+    fn all_algorithms_produce_correct_length() {
+        let pixels = solid_image(128, 64, 200, 10, 7);
+        let pal = ColorScheme::Bwr.palette();
+        assert_eq!(burkes(&pixels, 10, 7, pal, false).len(), 70);
+        assert_eq!(atkinson(&pixels, 10, 7, pal, false).len(), 70);
+        assert_eq!(stucki(&pixels, 10, 7, pal, false).len(), 70);
+        assert_eq!(sierra(&pixels, 10, 7, pal, false).len(), 70);
+        assert_eq!(sierra_lite(&pixels, 10, 7, pal, false).len(), 70);
+        assert_eq!(jarvis_judice_ninke(&pixels, 10, 7, pal, false).len(), 70);
+        assert_eq!(ordered_dither(&pixels, 10, pal).len(), 70);
+        assert_eq!(direct_map(&pixels, pal).len(), 70);
+    }
+
+    #[test]
+    fn direct_map_pure_red_maps_to_red_in_bwr() {
+        // BWR palette: index 0=black, 1=white, 2=red — pure red should map to red ink
+        let pixels = vec![255u8, 0, 0];
+        let out = direct_map(&pixels, ColorScheme::Bwr.palette());
+        assert_eq!(out[0], 2, "pure sRGB red should map to red ink (index 2) in BWR");
+    }
+
+    #[test]
+    fn direct_map_pure_blue_maps_to_blue_in_bwgbry() {
+        // BWGBRY palette order: 0=black, 1=white, 2=yellow, 3=red, 4=blue, 5=green
+        let pixels = vec![0u8, 0, 255];
+        let out = direct_map(&pixels, ColorScheme::Bwgbry.palette());
+        assert_eq!(out[0], 4, "pure sRGB blue should map to blue ink (index 4) in BWGBRY");
+    }
+
+    #[test]
+    fn serpentine_differs_from_raster_on_gradient() {
+        // A gradient (non-uniform content) should produce different output
+        // with serpentine=true vs serpentine=false
+        let pixels: Vec<u8> = (0u8..=255)
+            .flat_map(|v| [v, v / 2, 255 - v])
+            .cycle()
+            .take(16 * 16 * 3)
+            .collect();
+        let raster = floyd_steinberg(&pixels, 16, 16, ColorScheme::Mono.palette(), false);
+        let serpentine = floyd_steinberg(&pixels, 16, 16, ColorScheme::Mono.palette(), true);
+        assert_ne!(raster, serpentine, "serpentine and raster should differ on a gradient");
+    }
+
+    #[test]
+    fn serpentine_first_row_matches_raster() {
+        // Row 0 is always scanned left-to-right regardless of serpentine flag
+        let pixels: Vec<u8> = (0u8..=255)
+            .flat_map(|v| [v, 128u8.wrapping_add(v), 64u8])
+            .cycle()
+            .take(8 * 4 * 3)
+            .collect();
+        let raster = floyd_steinberg(&pixels, 8, 4, ColorScheme::Mono.palette(), false);
+        let serpentine = floyd_steinberg(&pixels, 8, 4, ColorScheme::Mono.palette(), true);
+        assert_eq!(
+            &raster[0..8],
+            &serpentine[0..8],
+            "first row must be identical (both scan left-to-right)"
+        );
     }
 }
