@@ -8,6 +8,14 @@ High-quality dithering for e-paper / e-ink displays.
 - **Measured palettes** — calibrated colors for real displays (Spectra 7.3", BWRY 3.97", and more)
 - **Serpentine scanning** — reduces directional artifacts in error diffusion
 
+## Examples
+
+| Original | Mono (Burkes) | Spectra 6-color (Burkes) |
+|---|---|---|
+| ![Original](../../../docs/examples/katzi_original.png) | ![Mono — Burkes](../../../docs/examples/katzi_mono.png) | ![Spectra 6-color — Burkes](../../../docs/examples/katzi_spectra6.png) |
+
+![Frankfurt at night — Spectra 6-color, auto tone compression](../../../docs/examples/frankfurt_nacht_spectra6.png)
+
 ## Usage
 
 ```rust
