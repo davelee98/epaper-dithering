@@ -2,27 +2,18 @@
   "packages": {
     "packages/python": {
       "release-type": "python",
-      "component": "python",
+      "component": "epaper-dithering",
       "package-name": "epaper-dithering",
-      "bump-minor-pre-major": true,
-      "bump-patch-for-minor-pre-major": true,
+      "bump-minor-pre-major": false,
+      "bump-patch-for-minor-pre-major": false,
       "changelog-path": "CHANGELOG.md",
       "extra-files": [
         "pyproject.toml",
         "Cargo.toml",
-        "src/epaper_dithering/__init__.py"
-      ]
-    },
-    "packages/javascript": {
-      "release-type": "node",
-      "component": "javascript",
-      "package-name": "@opendisplay/epaper-dithering",
-      "bump-minor-pre-major": true,
-      "bump-patch-for-minor-pre-major": true,
-      "changelog-path": "CHANGELOG.md",
-      "extra-files": [
-        "package.json",
-        "src/index.ts"
+        "src/epaper_dithering/__init__.py",
+        "../../packages/rust/core/Cargo.toml",
+        "../../packages/rust/wasm/Cargo.toml",
+        "../../packages/javascript/package.json"
       ]
     }
   },

@@ -15,10 +15,8 @@ jobs:
   release-please:
     runs-on: ubuntu-latest
     outputs:
-      python-release-created: ${{ steps.release.outputs['packages/python--release_created'] }}
-      python-tag: ${{ steps.release.outputs['packages/python--tag_name'] }}
-      javascript-release-created: ${{ steps.release.outputs['packages/javascript--release_created'] }}
-      javascript-tag: ${{ steps.release.outputs['packages/javascript--tag_name'] }}
+      release-created: ${{ steps.release.outputs['packages/python--release_created'] }}
+      tag: ${{ steps.release.outputs['packages/python--tag_name'] }}
     steps:
       - uses: googleapis/release-please-action@v4
         id: release
@@ -26,11 +24,31 @@ jobs:
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
 
+  # ── Rust: publish epaper-dithering-core to crates.io ────────────────────────
+
+  publish-rust:
+    needs: release-please
+    if: ${{ needs.release-please.outputs.release-created }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: packages/rust
+
+      - name: Publish to crates.io
+        run: cargo publish -p epaper-dithering-core
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+
   # ── Python: build wheels for each platform ──────────────────────────────────
 
   build-python-wheels:
     needs: release-please
-    if: ${{ needs.release-please.outputs.python-release-created }}
+    if: ${{ needs.release-please.outputs.release-created }}
     name: Build wheels (${{ matrix.target }})
     runs-on: ${{ matrix.os }}
     strategy:
@@ -64,7 +82,7 @@ jobs:
 
   build-python-sdist:
     needs: release-please
-    if: ${{ needs.release-please.outputs.python-release-created }}
+    if: ${{ needs.release-please.outputs.release-created }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -98,7 +116,7 @@ jobs:
 
   publish-javascript:
     needs: release-please
-    if: ${{ needs.release-please.outputs.javascript-release-created }}
+    if: ${{ needs.release-please.outputs.release-created }}
     runs-on: ubuntu-latest
     permissions:
       id-token: write
