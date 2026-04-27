@@ -1,6 +1,4 @@
-//! OKLab color space and LCH-weighted color matching.
-//!
-//! LCH weighting: hue errors can't be corrected by diffusion, lightness errors can.
+//! OKLab color space and color matching for dithering.
 
 // sRGB -> XYZ matrix (D65 illuminant, BruceLinbloom)
 const M_RGB_XYZ: [[f64; 3]; 3] = [
@@ -23,22 +21,19 @@ const M2: [[f64; 3]; 3] = [
     [0.0259040371, 0.7827717662, -0.8086757660],
 ];
 
-// LCH distance weights (hue > chroma > lightness)
-const WL: f64 = 0.5;
-const WC: f64 = 3.0; // scaled for OKLab's C range [0, ~0.4]
-const WH: f64 = 6.0;
+/// Chromatic-axes weight for `match_pixel_oklab`.
+///
+/// Empirically validated by `examples/wab_sweep.rs` against the regression fixture set
+/// (Burkes + Spectra 6-color, mean OKLab ΔE on 4×4-block-averaged outputs). 1.5 is a
+/// conservative choice that improves saturated subjects without over-saturating neutrals;
+/// see GitHub issue #28 for the methodology and justification.
+pub const WAB: f64 = 1.5;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct OkLab {
     pub l: f64,
     pub a: f64,
     pub b: f64,
-}
-
-impl OkLab {
-    pub fn chroma(&self) -> f64 {
-        (self.a * self.a + self.b * self.b).sqrt()
-    }
 }
 
 /// Linear RGB → OKLab. Pipeline: RGB → XYZ → LMS → cbrt → OKLab.
@@ -65,41 +60,36 @@ pub fn rgb_to_oklab(r: f64, g: f64, b: f64) -> OkLab {
 #[derive(Debug, Clone, PartialEq)]
 pub struct PaletteLab {
     pub colors: Vec<OkLab>,
-    pub chromas: Vec<f64>,
 }
 
 impl PaletteLab {
     pub fn from_linear_rgb(palette: &[[f64; 3]]) -> Self {
-        let colors: Vec<OkLab> = palette
-            .iter()
-            .map(|c| rgb_to_oklab(c[0], c[1], c[2]))
-            .collect();
-        let chromas = colors.iter().map(|c| c.chroma()).collect();
-        Self { colors, chromas }
+        let colors = palette.iter().map(|c| rgb_to_oklab(c[0], c[1], c[2])).collect();
+        Self { colors }
     }
 }
 
-/// Returns the index of the closest palette color (LCH-weighted OKLab distance).
-pub fn match_pixel_lch(pixel: OkLab, palette: &PaletteLab) -> usize {
-    let pc = pixel.chroma();
-
+/// Returns the index of the closest palette color, using weighted Cartesian OKLab distance.
+///
+/// `dist² = (1·dL)² + (wab·da)² + (wab·db)²`
+///
+/// `wab > 1.0` boosts the chromatic axes relative to lightness, encouraging use of color
+/// inks on saturated subjects without the achromatic singularity that the LCH formulation
+/// suffers from. With `wab = 1.0` this reduces to plain Euclidean OKLab.
+pub fn match_pixel_oklab(pixel: OkLab, palette: &PaletteLab, wab: f64) -> usize {
     let mut best_idx = 0;
     let mut best_dist = f64::INFINITY;
-
-    for (i, (pal, &pal_c)) in palette.colors.iter().zip(palette.chromas.iter()).enumerate() {
+    let wab_sq = wab * wab;
+    for (i, pal) in palette.colors.iter().enumerate() {
         let dl = pixel.l - pal.l;
         let da = pixel.a - pal.a;
         let db = pixel.b - pal.b;
-        let dc = pc - pal_c;
-        let dh_sq = (da * da + db * db - dc * dc).max(0.0);
-
-        let dist = (WL * dl) * (WL * dl) + (WC * dc) * (WC * dc) + WH * WH * dh_sq;
+        let dist = dl * dl + wab_sq * (da * da + db * db);
         if dist < best_dist {
             best_dist = dist;
             best_idx = i;
         }
     }
-
     best_idx
 }
 
@@ -129,25 +119,55 @@ mod tests {
         let red_linear = [0.2126, 0.0, 0.0_f64];
         let palette = PaletteLab::from_linear_rgb(&[red_linear, [0.0, 0.7152, 0.0]]);
         let pixel = rgb_to_oklab(red_linear[0], red_linear[1], red_linear[2]);
-        assert_eq!(match_pixel_lch(pixel, &palette), 0);
+        assert_eq!(match_pixel_oklab(pixel, &palette, WAB), 0);
     }
 
+    /// Cartesian OKLab matching does not collapse against achromatic palette colors;
+    /// vivid purple that the legacy LCH formulation sent to black gets routed to a chromatic ink.
     #[test]
-    fn lch_weights_favor_hue_over_lightness() {
-        // Target: medium-dark red-ish pixel
-        // Option A (index 0): darker red — same hue, lower lightness
-        // Option B (index 1): neutral gray — same-ish lightness, completely different hue
-        //
-        // With WH=6.0 >> WL=0.5, option A (correct hue) should win over option B.
-        let target         = rgb_to_oklab(0.30, 0.04, 0.04); // medium red
-        let option_a_rgb   = [0.10_f64, 0.012, 0.012];       // darker red — hue match
-        let option_b_rgb   = [0.30_f64, 0.30,  0.30];        // neutral gray — lightness match
-
-        let palette = PaletteLab::from_linear_rgb(&[option_a_rgb, option_b_rgb]);
-        let result = match_pixel_lch(target, &palette);
-        assert_eq!(
-            result, 0,
-            "LCH matching should prefer correct hue (darker red) over correct lightness (gray)"
-        );
+    fn oklab_cartesian_avoids_achromatic_attractor() {
+        let palette = PaletteLab::from_linear_rgb(&[
+            [0.005, 0.005, 0.005], // black (idx 0)
+            [0.85,  0.85,  0.85],  // white (idx 1)
+            [0.55,  0.45,  0.0],   // dim yellow (idx 2)
+            [0.18,  0.01,  0.0],   // dim red (idx 3)
+            [0.01,  0.02,  0.18],  // dim blue (idx 4)
+            [0.02,  0.18,  0.04],  // dim green (idx 5)
+        ]);
+        let purple = rgb_to_oklab(0.4, 0.0, 0.6);
+        for wab in [1.0_f64, 1.25, 1.5, 1.75, 2.0] {
+            let idx = match_pixel_oklab(purple, &palette, wab);
+            assert_ne!(idx, 0, "wab={wab}: purple must not map to black");
+            assert_ne!(idx, 1, "wab={wab}: purple must not map to white");
+        }
     }
+
+    /// Sanity: with wab = 1.0 the function is plain Euclidean OKLab, so it picks the
+    /// palette entry that minimizes `dL² + da² + db²`.
+    #[test]
+    fn oklab_unweighted_matches_euclidean() {
+        let palette_rgb = [[0.1_f64, 0.0, 0.0], [0.0, 0.7152, 0.0]];
+        let palette = PaletteLab::from_linear_rgb(&palette_rgb);
+        let pixel = rgb_to_oklab(0.0, 0.7152, 0.0);
+        assert_eq!(match_pixel_oklab(pixel, &palette, 1.0), 1);
+        assert_eq!(match_pixel_oklab(pixel, &palette, 1.5), 1);
+    }
+
+    /// Hue still wins under Cartesian OKLab matching: a medium-red pixel goes to a darker
+    /// red rather than a same-lightness gray. The `wab > 1.0` boost on `(da, db)`
+    /// ensures color separation dominates lightness.
+    #[test]
+    fn oklab_cartesian_favors_hue_over_lightness() {
+        let target       = rgb_to_oklab(0.30, 0.04, 0.04); // medium red
+        let darker_red   = [0.10_f64, 0.012, 0.012];       // hue match
+        let neutral_gray = [0.30_f64, 0.30,  0.30];        // lightness match
+        let palette = PaletteLab::from_linear_rgb(&[darker_red, neutral_gray]);
+        for wab in [1.25, 1.5, 1.75, 2.0_f64] {
+            assert_eq!(
+                match_pixel_oklab(target, &palette, wab), 0,
+                "wab={wab}: should prefer correct hue (darker red) over correct lightness (gray)"
+            );
+        }
+    }
+
 }
