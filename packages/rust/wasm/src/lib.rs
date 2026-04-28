@@ -65,7 +65,7 @@ pub fn dither_image(
             .map_err(|e| JsValue::from_str(&e.to_string()))?;
         Ok(dither(&img, scheme.palette(), config))
     } else {
-        if palette_bytes.len() % 3 != 0 {
+        if !palette_bytes.len().is_multiple_of(3) {
             return Err(JsValue::from_str("palette_bytes length must be a multiple of 3"));
         }
         let colors: Vec<[u8; 3]> = palette_bytes.chunks_exact(3).map(|c| [c[0], c[1], c[2]]).collect();

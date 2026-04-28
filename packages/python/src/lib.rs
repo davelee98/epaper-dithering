@@ -71,7 +71,7 @@ fn dither_image(
 
     match (palette_bytes, scheme_id) {
         (Some(bytes), _) => {
-            if bytes.len() % 3 != 0 {
+            if !bytes.len().is_multiple_of(3) {
                 return Err(PyValueError::new_err("palette_bytes length must be a multiple of 3"));
             }
             let colors: Vec<[u8; 3]> = bytes.chunks_exact(3).map(|c| [c[0], c[1], c[2]]).collect();
