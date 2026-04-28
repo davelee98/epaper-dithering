@@ -40,7 +40,7 @@ jobs:
           workspaces: packages/rust
 
       - name: Publish to crates.io
-        run: cargo publish -p epaper-dithering-core
+        run: cargo publish --manifest-path packages/rust/Cargo.toml -p epaper-dithering-core
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
 
