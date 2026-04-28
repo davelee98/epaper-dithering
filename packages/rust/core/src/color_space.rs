@@ -1,10 +1,17 @@
 /// sRGB [0–255] → linear [0.0–1.0]. IEC 61966-2-1 piecewise transfer function.
 pub fn srgb_channel_to_linear(value: u8) -> f64 {
-    let normalized = value as f64 / 255.0;
-    if normalized <= 0.04045 {
-        normalized / 12.92
+    srgb_fraction_to_linear(value as f64 / 255.0)
+}
+
+/// Continuous sRGB fraction [0.0–1.0] → linear [0.0–1.0]. Same gamma curve as
+/// `srgb_channel_to_linear` but operates on continuous input — useful when sub-byte
+/// precision is needed (e.g. ordered dither perturbs pixels in sRGB-fraction space
+/// before the linear conversion).
+pub fn srgb_fraction_to_linear(value: f64) -> f64 {
+    if value <= 0.04045 {
+        value / 12.92
     } else {
-        ((normalized + 0.055) / 1.055).powf(2.4)
+        ((value + 0.055) / 1.055).powf(2.4)
     }
 }
 

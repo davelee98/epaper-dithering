@@ -1,6 +1,6 @@
 //! Error diffusion and ordered dithering on raw RGB pixel buffers.
 
-use crate::color_space::srgb_channel_to_linear;
+use crate::color_space::{srgb_channel_to_linear, srgb_fraction_to_linear};
 use crate::color_space_lab::{PaletteLab, match_pixel_oklab, rgb_to_oklab, WAB};
 use crate::palettes::Palette;
 use rayon::prelude::*;
@@ -254,6 +254,12 @@ const BAYER_4X4: [[f64; 4]; 4] = [
 ];
 
 /// Ordered (Bayer 4×4) dither. Pixels are independent — parallelized with rayon.
+///
+/// The Bayer threshold is added in sRGB-fraction space, not linear. Linear-space
+/// thresholding produces ~3× the perceptual spread in shadows compared to highlights
+/// (the sRGB gamma is convex, so a fixed linear ±0.5 step is huge near 0 and tiny near 1).
+/// sRGB-space thresholding gives uniform perceptual dot density across the tonal range,
+/// matching how error diffusion already accumulates error. See GitHub issue #27.
 pub fn ordered_dither(pixels: &[u8], width: usize, palette: &Palette) -> Vec<u8> {
     let (_palette_linear, palette_lab) = build_palette_lab(palette);
 
@@ -266,11 +272,16 @@ pub fn ordered_dither(pixels: &[u8], width: usize, palette: &Palette) -> Vec<u8>
 
             let threshold = BAYER_4X4[y % 4][x % 4];
 
-            let r = (srgb_channel_to_linear(rgb[0]) + threshold).clamp(0.0, 1.0);
-            let g = (srgb_channel_to_linear(rgb[1]) + threshold).clamp(0.0, 1.0);
-            let b = (srgb_channel_to_linear(rgb[2]) + threshold).clamp(0.0, 1.0);
+            // Add threshold in sRGB-fraction space, then convert to linear for OKLab match.
+            let r_srgb = (rgb[0] as f64 / 255.0 + threshold).clamp(0.0, 1.0);
+            let g_srgb = (rgb[1] as f64 / 255.0 + threshold).clamp(0.0, 1.0);
+            let b_srgb = (rgb[2] as f64 / 255.0 + threshold).clamp(0.0, 1.0);
 
-            let lab = rgb_to_oklab(r, g, b);
+            let lab = rgb_to_oklab(
+                srgb_fraction_to_linear(r_srgb),
+                srgb_fraction_to_linear(g_srgb),
+                srgb_fraction_to_linear(b_srgb),
+            );
             match_pixel_oklab(lab, &palette_lab, WAB) as u8
         })
         .collect()
@@ -351,6 +362,61 @@ mod tests {
         let raster = floyd_steinberg(&pixels, 16, 16, ColorScheme::Mono.palette(), false);
         let serpentine = floyd_steinberg(&pixels, 16, 16, ColorScheme::Mono.palette(), true);
         assert_ne!(raster, serpentine, "serpentine and raster should differ on a gradient");
+    }
+
+    /// Property test for issue #27: ordered dither activity should be perceptually uniform
+    /// across the tonal range, not skewed toward shadows.
+    ///
+    /// On a horizontal sRGB ramp (one column per luminance level), each Bayer-period band
+    /// of columns contains the same `x % 4` thresholds and therefore the same *kinds* of
+    /// dithering decisions. Under linear-space thresholding, the perceptual spread of the
+    /// threshold is huge in shadows and tiny in highlights, so transitions cluster heavily
+    /// in the dark bands. Under sRGB-space thresholding, transitions distribute roughly
+    /// evenly across mid-tone bands.
+    ///
+    /// We measure transitions (adjacent columns with differing palette indices) per band
+    /// in the mid-tone region and assert the max/min ratio stays modest. Empirically the
+    /// linear-space implementation produces ratio ≈ 13.5; sRGB-space ≈ 4.3.
+    #[test]
+    fn ordered_dither_activity_is_perceptually_uniform() {
+        const W: usize = 256;
+        const H: usize = 16; // 4 full Bayer cells vertically
+        const BANDS: usize = 8;
+        const BAND_W: usize = W / BANDS;
+
+        // Horizontal sRGB ramp 0..255.
+        let mut pixels = Vec::with_capacity(W * H * 3);
+        for _ in 0..H {
+            for x in 0..W {
+                let v = x as u8;
+                pixels.extend_from_slice(&[v, v, v]);
+            }
+        }
+        let out = ordered_dither(&pixels, W, ColorScheme::Mono.palette());
+
+        // Count per-band horizontal transitions (adjacent columns with differing index).
+        let mut transitions = [0usize; BANDS];
+        for y in 0..H {
+            for x in 0..W - 1 {
+                if out[y * W + x] != out[y * W + x + 1] {
+                    transitions[(x / BAND_W).min(BANDS - 1)] += 1;
+                }
+            }
+        }
+
+        // Mid-tone bands (skip the first and last — they're near pure black/white where
+        // the threshold is clamped and dither activity legitimately falls off).
+        let mid = &transitions[1..BANDS - 1];
+        let max = *mid.iter().max().unwrap();
+        let min = *mid.iter().min().unwrap();
+        assert!(min > 0, "every mid-tone band should have at least one transition: {transitions:?}");
+        let ratio = max as f64 / min as f64;
+        assert!(
+            ratio < 5.0,
+            "ordered-dither activity is perceptually skewed (max/min = {ratio:.2}); \
+             expected sRGB-space ordered dither to spread roughly uniformly across \
+             mid-tones. Per-band transitions: {transitions:?}"
+        );
     }
 
     #[test]
