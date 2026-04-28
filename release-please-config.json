@@ -11,9 +11,9 @@
         "pyproject.toml",
         "Cargo.toml",
         "src/epaper_dithering/__init__.py",
-        "../../packages/rust/core/Cargo.toml",
-        "../../packages/rust/wasm/Cargo.toml",
-        "../../packages/javascript/package.json"
+        "/packages/rust/core/Cargo.toml",
+        "/packages/rust/wasm/Cargo.toml",
+        "/packages/javascript/package.json"
       ]
     }
   },
