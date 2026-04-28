@@ -37,7 +37,7 @@ from epaper_dithering import dither_image, ColorScheme, DitherMode, SPECTRA_7_3_
 img = Image.open("photo.jpg")
 
 # Idealized palette
-dithered = dither_image(img, ColorScheme.BWR, DitherMode.FLOYD_STEINBERG)
+dithered = dither_image(img, ColorScheme.BWR, mode=DitherMode.FLOYD_STEINBERG)
 
 # Measured palette — auto tone + gamut compression
 dithered = dither_image(img, SPECTRA_7_3_6COLOR_V2)
@@ -57,7 +57,7 @@ npm install @opendisplay/epaper-dithering
 import { ditherImage, ColorScheme, DitherMode, SPECTRA_7_3_6COLOR_V2 } from '@opendisplay/epaper-dithering';
 
 // ImageBuffer from Canvas API or Node.js (sharp, etc.)
-const dithered = ditherImage(imageBuffer, ColorScheme.BWR, DitherMode.BURKES);
+const dithered = ditherImage(imageBuffer, ColorScheme.BWR, { mode: DitherMode.BURKES });
 
 // Measured palette — auto tone + gamut compression
 const dithered = ditherImage(imageBuffer, SPECTRA_7_3_6COLOR_V2);
@@ -71,7 +71,8 @@ See [`packages/javascript/README.md`](packages/javascript/README.md) for full do
 - **9 Dithering Algorithms**: NONE, ORDERED, BURKES, FLOYD_STEINBERG, ATKINSON, STUCKI, SIERRA, SIERRA_LITE, JARVIS_JUDICE_NINKE
 - **8 Color Schemes**: MONO, BWR, BWY, BWRY, BWGBRY (Spectra 6), GRAYSCALE_4, GRAYSCALE_8, GRAYSCALE_16
 - **Measured Palettes**: Calibrated RGB values for real displays with tone + gamut compression
-- **OKLab Color Matching**: LCH-weighted perceptual distance prioritizes hue accuracy
+- **OKLab Color Matching**: Weighted Cartesian OKLab — preserves hue without the achromatic-attractor bug of LCH-weighted approaches
+- **Pre-dither Knobs**: Per-image exposure, saturation, shadows, highlights, and gamut compression — all orthogonal
 
 ## Repository Structure
 

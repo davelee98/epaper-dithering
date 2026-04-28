@@ -606,6 +606,31 @@
       </div>
     </div>
 
+    <!-- Pre-dither adjustments (apply to all palettes) -->
+    <div>
+      <div class="group-label">Pre-dither</div>
+      <div class="sub-group-label">Exposure</div>
+      <div class="slider-row">
+        <input type="range" id="exposureSlider" min="25" max="400" value="100" step="5">
+        <span class="slider-val" id="exposureVal">1.00</span>
+      </div>
+      <div class="sub-group-label">Saturation</div>
+      <div class="slider-row">
+        <input type="range" id="saturationSlider" min="0" max="200" value="100" step="5">
+        <span class="slider-val" id="saturationVal">1.00</span>
+      </div>
+      <div class="sub-group-label">Shadows</div>
+      <div class="slider-row">
+        <input type="range" id="shadowsSlider" min="0" max="100" value="0" step="5">
+        <span class="slider-val muted" id="shadowsVal">0.00</span>
+      </div>
+      <div class="sub-group-label">Highlights</div>
+      <div class="slider-row">
+        <input type="range" id="highlightsSlider" min="0" max="100" value="0" step="5">
+        <span class="slider-val muted" id="highlightsVal">0.00</span>
+      </div>
+    </div>
+
     <!-- Compression controls (measured palettes only) -->
     <div id="compressionSection">
       <div class="group-label">Tone Compression</div>
@@ -755,6 +780,14 @@ const toneVal         = document.getElementById('toneVal');
 const gamutAutoToggle = document.getElementById('gamutAutoToggle');
 const gamutSlider     = document.getElementById('gamutSlider');
 const gamutVal        = document.getElementById('gamutVal');
+const exposureSlider   = document.getElementById('exposureSlider');
+const exposureVal      = document.getElementById('exposureVal');
+const saturationSlider = document.getElementById('saturationSlider');
+const saturationVal    = document.getElementById('saturationVal');
+const shadowsSlider    = document.getElementById('shadowsSlider');
+const shadowsVal       = document.getElementById('shadowsVal');
+const highlightsSlider = document.getElementById('highlightsSlider');
+const highlightsVal    = document.getElementById('highlightsVal');
 const origCanvas      = document.getElementById('origCanvas');
 const dithCanvas      = document.getElementById('dithCanvas');
 const canvasRow       = document.getElementById('canvasRow');
@@ -806,6 +839,13 @@ function getGamutCompression() {
   return gamutAutoToggle.checked ? 'auto' : gamutSlider.value / 100;
 }
 
+// ── Pre-dither helpers ───────────────────────────────────────────
+
+function getExposure()   { return exposureSlider.value   / 100; }
+function getSaturation() { return saturationSlider.value / 100; }
+function getShadows()    { return shadowsSlider.value    / 100; }
+function getHighlights() { return highlightsSlider.value / 100; }
+
 // ── Core: dither and render ──────────────────────────────────────
 
 function runDither() {
@@ -828,7 +868,17 @@ function runDither() {
 
     const result = ditherImage(
       { width: currentImageData.width, height: currentImageData.height, data: currentImageData.data },
-      scheme, mode, useSerpentine, toneComp, gamutComp,
+      scheme,
+      {
+        mode,
+        serpentine: useSerpentine,
+        exposure:   getExposure(),
+        saturation: getSaturation(),
+        shadows:    getShadows(),
+        highlights: getHighlights(),
+        tone:  toneComp,
+        gamut: gamutComp,
+      },
     );
 
     const elapsed = performance.now() - t0;
@@ -941,6 +991,20 @@ gamutSlider.addEventListener('input', () => {
   gamutVal.textContent = `${gamutSlider.value}%`;
   runDither();
 });
+
+// Pre-dither sliders. Mute the value label when at identity (no effect).
+function wireFloatSlider(slider, label, identityValue) {
+  slider.addEventListener('input', () => {
+    const v = slider.value / 100;
+    label.textContent = v.toFixed(2);
+    label.className = 'slider-val' + (v === identityValue ? ' muted' : '');
+    runDither();
+  });
+}
+wireFloatSlider(exposureSlider,   exposureVal,   1.0);
+wireFloatSlider(saturationSlider, saturationVal, 1.0);
+wireFloatSlider(shadowsSlider,    shadowsVal,    0.0);
+wireFloatSlider(highlightsSlider, highlightsVal, 0.0);
 
 uploadZone.addEventListener('dragover', (e) => { e.preventDefault(); uploadZone.classList.add('over'); });
 uploadZone.addEventListener('dragleave', () => uploadZone.classList.remove('over'));
