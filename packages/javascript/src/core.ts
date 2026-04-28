@@ -1,51 +1,113 @@
 import type { ImageBuffer, PaletteImageBuffer, ColorPalette } from './types';
 import { DitherMode } from './enums';
-import { ColorScheme } from './palettes';
-import * as algorithms from './algorithms';
+import { ColorScheme, getPalette } from './palettes';
+import {
+  dither_image as wasmDitherImage,
+  composite_rgba as wasmCompositeRgba,
+  __wbg_set_wasm,
+  __wbindgen_init_externref_table,
+  __wbindgen_cast_0000000000000001,
+} from './wasm-core/epaper_dithering_wasm_bg.js';
+import wasmBytes from './wasm-core/epaper_dithering_wasm_bg.wasm';
+
+// Synchronous WASM initialization — runs once at module load time.
+const wasmModule = new WebAssembly.Module(wasmBytes as unknown as ArrayBuffer);
+const wasmInstance = new WebAssembly.Instance(wasmModule, {
+  './epaper_dithering_wasm_bg.js': {
+    __wbindgen_init_externref_table,
+    __wbindgen_cast_0000000000000001,
+  },
+});
+__wbg_set_wasm(wasmInstance.exports);
+(wasmInstance.exports as Record<string, () => void>).__wbindgen_start?.();
 
 /**
- * Apply dithering algorithm to image for e-paper display.
+ * Options for `ditherImage`. All fields are optional — defaults are sensible.
  *
- * @param image - Input image buffer (RGBA format). Alpha is composited on white.
- * @param colorScheme - Target color scheme (ColorScheme enum) or measured palette (ColorPalette)
- * @param mode - Dithering algorithm (default: BURKES)
- * @param serpentine - Alternate row direction to reduce artifacts (default: true)
- * @returns Palette-indexed image buffer
+ * Pre-processing pipeline (each step is a no-op at its identity value):
+ * `exposure → saturation → shadows/highlights → tone → gamut → dither`.
+ */
+export interface DitherOptions {
+  /** Dithering algorithm. Default: `DitherMode.BURKES`. */
+  mode?: DitherMode;
+  /** Alternate row scan direction for error diffusion. Default: `true`. */
+  serpentine?: boolean;
+  /** Linear-RGB exposure multiplier. 1.0 = no change, 2.0 = +1 stop. Default: `1.0`. */
+  exposure?: number;
+  /** OKLab saturation multiplier. 1.0 = no change, 0.0 = grayscale. Default: `1.0`. */
+  saturation?: number;
+  /** Shadow lift strength (S-curve lower half). 0.0 = off, 1.0 = strong. Default: `0.0`. */
+  shadows?: number;
+  /** Highlight compression strength (S-curve upper half). 0.0 = off, 1.0 = strong. Default: `0.0`. */
+  highlights?: number;
+  /** Dynamic-range compression: `'auto'` | `'off'` | 0.0–1.0. Default: `'auto'`. */
+  tone?: number | 'auto' | 'off';
+  /** Gamut compression: `'auto'` | `'off'` | 0.0–1.0. Default: `'auto'`. */
+  gamut?: number | 'auto' | 'off';
+}
+
+/**
+ * Apply dithering to an RGBA image for an e-paper display.
  *
- * @example
- * ```typescript
- * // Standard color scheme
- * const dithered = ditherImage(imageBuffer, ColorScheme.BWR, DitherMode.FLOYD_STEINBERG);
- *
- * // Measured palette for accurate color matching
- * const dithered = ditherImage(imageBuffer, SPECTRA_7_3_6COLOR);
- * ```
+ * @param image     Input RGBA image. Alpha is composited on white.
+ * @param palette   Target palette: `ColorScheme` enum (idealized) or `ColorPalette` (measured).
+ * @param options   Per-call overrides — see {@link DitherOptions}.
+ * @returns Palette-indexed image buffer.
  */
 export function ditherImage(
   image: ImageBuffer,
-  colorScheme: ColorScheme | ColorPalette,
-  mode: DitherMode = DitherMode.BURKES,
-  serpentine: boolean = true,
+  palette: ColorScheme | ColorPalette,
+  options: DitherOptions = {},
 ): PaletteImageBuffer {
-  switch (mode) {
-    case DitherMode.NONE:
-      return algorithms.directPaletteMap(image, colorScheme);
-    case DitherMode.ORDERED:
-      return algorithms.orderedDither(image, colorScheme);
-    case DitherMode.FLOYD_STEINBERG:
-      return algorithms.floydSteinbergDither(image, colorScheme, serpentine);
-    case DitherMode.ATKINSON:
-      return algorithms.atkinsonDither(image, colorScheme, serpentine);
-    case DitherMode.STUCKI:
-      return algorithms.stuckiDither(image, colorScheme, serpentine);
-    case DitherMode.SIERRA:
-      return algorithms.sierraDither(image, colorScheme, serpentine);
-    case DitherMode.SIERRA_LITE:
-      return algorithms.sierraLiteDither(image, colorScheme, serpentine);
-    case DitherMode.JARVIS_JUDICE_NINKE:
-      return algorithms.jarvisJudiceNinkeDither(image, colorScheme, serpentine);
-    case DitherMode.BURKES:
-    default:
-      return algorithms.burkesDither(image, colorScheme, serpentine);
+  const {
+    mode = DitherMode.BURKES,
+    serpentine = true,
+    exposure = 1.0,
+    saturation = 1.0,
+    shadows = 0.0,
+    highlights = 0.0,
+    tone = 'auto',
+    gamut = 'auto',
+  } = options;
+
+  const rgba = new Uint8Array(image.data.buffer, image.data.byteOffset, image.data.byteLength);
+  const pixels = wasmCompositeRgba(rgba);
+
+  // Idealized schemes don't have a measured display range, so tone/gamut don't apply.
+  const isScheme = typeof palette === 'number';
+  const toneArg  = isScheme ? 0.0 : parseCompression(tone);
+  const gamutArg = isScheme ? 0.0 : parseCompression(gamut);
+
+  let schemeId = 0;
+  let paletteBytes: Uint8Array;
+  let accentIdx = 0;
+  let outputColors: { r: number; g: number; b: number }[];
+
+  if (isScheme) {
+    schemeId = palette as number;
+    paletteBytes = new Uint8Array(0);
+    outputColors = Object.values(getPalette(palette).colors);
+  } else {
+    const colors = Object.values(palette.colors);
+    paletteBytes = new Uint8Array(colors.flatMap(c => [c.r, c.g, c.b]));
+    accentIdx = Object.keys(palette.colors).indexOf(palette.accent);
+    outputColors = colors;
   }
+
+  const indices = wasmDitherImage(
+    pixels, image.width,
+    schemeId, paletteBytes, accentIdx,
+    mode as number, serpentine,
+    exposure, saturation, shadows, highlights,
+    toneArg, gamutArg,
+  );
+
+  return { width: image.width, height: image.height, indices, palette: outputColors };
+}
+
+/** Map `'auto'` → `undefined` (Rust None = auto), `'off'` → 0.0, number → pass through. */
+function parseCompression(v: number | 'auto' | 'off'): number | undefined {
+  if (v === 'auto') return undefined;
+  if (v === 'off')  return 0.0;
+  return v;
 }

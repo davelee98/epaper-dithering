@@ -78,3 +78,10 @@ yarn.lock
 *.bmp
 !fixtures/images/
 uv.lock
+
+# Python scratch / dev files
+packages/python/test.py
+packages/python/test_timed.py
+packages/python/benchmark.py
+packages/python/np_test.py
+packages/python/*.pdf

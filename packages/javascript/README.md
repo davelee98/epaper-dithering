@@ -2,18 +2,19 @@
 
 [![npm](https://img.shields.io/npm/v/@opendisplay/epaper-dithering?style=flat-square)](https://www.npmjs.com/package/@opendisplay/epaper-dithering)
 
-High-quality dithering algorithms for e-paper/e-ink displays, implemented in TypeScript. Works in both browser and Node.js environments.
+High-quality dithering algorithms for e-paper/e-ink displays, powered by a Rust/WASM core. Works in both browser and Node.js environments.
 
 ## Features
 
+- **Rust/WASM Core**: Compiled Rust logic bundled inline — no async init, no external files, works everywhere
 - **9 Dithering Algorithms**: From fast ordered dithering to high-quality error diffusion
 - **8 Color Schemes**: MONO, BWR, BWY, BWRY, BWGBRY (Spectra 6), GRAYSCALE\_4/8/16
-- **Measured Palettes**: Use real display-calibrated colors for accurate dithering (SPECTRA\_7\_3\_6COLOR, BWRY\_3\_97, and more)
-- **LCH Color Matching**: Perceptual LAB color space with hue-weighted distance — hue errors can't be recovered by error diffusion, so they're prioritized
+- **Measured Palettes**: Use real display-calibrated colors for accurate dithering (SPECTRA\_7\_3\_6COLOR\_V2, BWRY\_3\_97, and more)
+- **OKLab Color Matching**: Weighted Cartesian OKLab — preserves hue without the achromatic-attractor bug that plagues LCH-weighted approaches
+- **Pre-dither Adjustments**: Per-image exposure, saturation, shadows, highlights, dynamic-range compression, and gamut compression — all orthogonal knobs
 - **Serpentine Scanning**: Alternates row direction to eliminate directional artifacts
-- **Universal**: Works in browser (Canvas API) and Node.js (with sharp/jimp)
-- **Zero Dependencies**: Pure TypeScript, no image library dependencies
-- **Fast**: 256-entry sRGB LUT, pre-computed palette LAB arrays, typed array pixel buffers
+- **Universal**: Works in browser (Canvas API) and Node.js (≥18)
+- **Zero Dependencies**: WASM binary bundled inline, no image library required
 
 ## Installation
 
@@ -44,7 +45,7 @@ const imageData = ctx.getImageData(0, 0, img.width, img.height);
 const dithered = ditherImage(
   { width: imageData.width, height: imageData.height, data: imageData.data },
   ColorScheme.BWR,
-  DitherMode.FLOYD_STEINBERG,
+  { mode: DitherMode.FLOYD_STEINBERG },
 );
 
 // Render result
@@ -65,10 +66,10 @@ Standard `ColorScheme` values use ideal sRGB colors (e.g. white = 255,255,255). 
 import { ditherImage, SPECTRA_7_3_6COLOR, BWRY_3_97 } from '@opendisplay/epaper-dithering';
 
 // Automatically applies tone compression to fit the display's actual dynamic range
-const dithered = ditherImage(imageBuffer, SPECTRA_7_3_6COLOR, DitherMode.BURKES);
+const dithered = ditherImage(imageBuffer, SPECTRA_7_3_6COLOR, { mode: DitherMode.BURKES });
 ```
 
-Available measured palettes: `SPECTRA_7_3_6COLOR`, `BWRY_3_97`, `MONO_4_26`, `BWRY_4_2`, `SOLUM_BWR`, `HANSHOW_BWR`, `HANSHOW_BWY`.
+Available measured palettes: `SPECTRA_7_3_6COLOR_V2`, `SPECTRA_7_3_6COLOR`, `BWRY_3_97`, `MONO_4_26`, `BWRY_4_2`, `SOLUM_BWR`, `HANSHOW_BWR`, `HANSHOW_BWY`.
 
 ### Node.js (with sharp)
 
@@ -84,7 +85,7 @@ const { data, info } = await sharp('photo.jpg')
 const dithered = ditherImage(
   { width: info.width, height: info.height, data: new Uint8ClampedArray(data) },
   ColorScheme.BWR,
-  DitherMode.BURKES,
+  { mode: DitherMode.BURKES },
 );
 
 const rgbaBuffer = Buffer.alloc(dithered.width * dithered.height * 4);
@@ -101,14 +102,24 @@ await sharp(rgbaBuffer, { raw: { width: dithered.width, height: dithered.height,
 
 ## API Reference
 
-### `ditherImage(image, colorScheme, mode?, serpentine?)`
+### `ditherImage(image, colorScheme, options?)`
 
-| Parameter | Type | Default | Description |
+```typescript
+ditherImage(image: ImageBuffer, palette: ColorScheme | ColorPalette, options?: DitherOptions): PaletteImageBuffer
+```
+
+| `options` field | Type | Default | Description |
 |---|---|---|---|
-| `image` | `ImageBuffer` | — | RGBA input image |
-| `colorScheme` | `ColorScheme \| ColorPalette` | — | Target palette (enum or measured) |
 | `mode` | `DitherMode` | `BURKES` | Dithering algorithm |
 | `serpentine` | `boolean` | `true` | Alternate row direction to reduce artifacts |
+| `exposure` | `number` | `1.0` | Linear-RGB exposure multiplier. `2.0` = +1 stop, `0.5` = −1 stop |
+| `saturation` | `number` | `1.0` | OKLab saturation multiplier. `0.0` = grayscale, `>1` = boost. Hue-preserving |
+| `shadows` | `number` | `0.0` | Shadow lift strength (S-curve lower half). `0.0` = off, `1.0` = strong |
+| `highlights` | `number` | `0.0` | Highlight compression strength (S-curve upper half). `0.0` = off, `1.0` = strong |
+| `tone` | `number \| 'auto' \| 'off'` | `'auto'` | Dynamic range compression. `'auto'` = histogram-based; numeric = fixed strength. Ignored for `ColorScheme` |
+| `gamut` | `number \| 'auto' \| 'off'` | `'auto'` | Pre-dither gamut compression. `'auto'` = activate when image exceeds palette gamut; numeric = fixed. Ignored for `ColorScheme` |
+
+Pre-processing pipeline: `exposure → saturation → shadows/highlights → tone → gamut → dither`. Each step is a no-op at its identity value.
 
 Returns `PaletteImageBuffer`.
 
@@ -178,7 +189,20 @@ bun run dev
 
 Features: drag & drop or paste from clipboard, live re-render on every setting change, timing display, palette swatch preview.
 
+## Development
+
+```bash
+bun install
+
+# When Rust source changes, rebuild the WASM (from repo root):
+wasm-pack build packages/rust/wasm --target bundler --out-dir ../../javascript/src/wasm-core
+
+bun run test        # vitest
+bun run build       # tsup → dist/
+bun run type-check
+```
+
 ## Related Projects
 
-- **Python**: [`epaper-dithering`](https://pypi.org/project/epaper-dithering/) — Python implementation (feature superset)
+- **Python**: [`epaper-dithering`](https://pypi.org/project/epaper-dithering/) — Python package, shares the same Rust core
 - **OpenDisplay**: [`py-opendisplay`](https://github.com/OpenDisplay-org/py-opendisplay) — Python library for OpenDisplay BLE devices

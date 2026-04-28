@@ -1,0 +1,25 @@
+[package]
+name = "epaper-dithering-core"
+version = "3.0.0"
+edition = "2024"
+description = "High-quality dithering algorithms for e-paper / e-ink displays — OKLab color matching, error diffusion, ordered dithering, measured palettes"
+license = "MIT"
+repository = "https://github.com/OpenDisplay-org/epaper-dithering"
+homepage = "https://opendisplay.org"
+documentation = "https://docs.rs/epaper-dithering-core"
+keywords = ["epaper", "eink", "dithering", "color", "embedded"]
+categories = ["graphics", "multimedia::images", "embedded"]
+readme = "README.md"
+exclude = ["examples/minzi.jpeg"]
+
+[dependencies]
+rayon = "1.10"
+
+[[bench]]
+name = "dithering"
+harness = false
+
+[dev-dependencies]
+approx = "0.5"  # float comparisons in tests: assert_relative_eq!
+criterion = { version = "0.5", features = ["html_reports"] }
+image = "0.25"  # image loading/saving for examples

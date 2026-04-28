@@ -1,0 +1,12 @@
+[package]
+name = "epaper-dithering"
+version = "3.0.0"
+edition = "2024"
+
+[lib]
+name = "epaper_dithering_rs"
+crate-type = ["cdylib"]
+
+[dependencies]
+epaper-dithering-core = { path = "../rust/core" }
+pyo3 = { version = "0.28.2", features = ["extension-module"] }

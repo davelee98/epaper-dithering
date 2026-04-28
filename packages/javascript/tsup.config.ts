@@ -11,4 +11,5 @@ export default defineConfig({
   treeshake: true,
   target: 'es2022',
   platform: 'neutral',  // Works in both browser and Node.js
+  loader: { '.wasm': 'binary' },  // Inline WASM binary as Uint8Array
 });

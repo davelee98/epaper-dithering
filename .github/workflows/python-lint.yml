@@ -26,7 +26,7 @@ jobs:
         run: uv python install 3.11
 
       - name: Install dependencies
-        run: uv --project packages/python sync --all-extras
+        run: uv --project packages/python sync --all-extras --no-install-project
 
       - name: Run prek
         run: uv --project packages/python run prek run --all-files --config packages/python/.pre-commit-config.yaml

@@ -28,7 +28,7 @@ describe('Dithering Algorithms', () => {
     'works with color scheme %s',
     (scheme) => {
       const image = createTestImage(10, 10, { r: 128, g: 128, b: 128 });
-      const result = ditherImage(image, scheme as ColorScheme, DitherMode.BURKES);
+      const result = ditherImage(image, scheme as ColorScheme, { mode: DitherMode.BURKES });
 
       expect(result.palette.length).toBeGreaterThan(0);
     }
@@ -36,7 +36,7 @@ describe('Dithering Algorithms', () => {
 
   it('handles RGBA input correctly', () => {
     const image = createTestImage(10, 10, { r: 128, g: 128, b: 128 });
-    const result = ditherImage(image, ColorScheme.BWR, DitherMode.BURKES);
+    const result = ditherImage(image, ColorScheme.BWR, { mode: DitherMode.BURKES });
 
     expect(result).toBeDefined();
     expect(result.width).toBe(10);
@@ -46,8 +46,8 @@ describe('Dithering Algorithms', () => {
   it('produces different output for different algorithms', () => {
     const image = createGradient(100, 100);
 
-    const burkes = ditherImage(image, ColorScheme.MONO, DitherMode.BURKES);
-    const floydSteinberg = ditherImage(image, ColorScheme.MONO, DitherMode.FLOYD_STEINBERG);
+    const burkes = ditherImage(image, ColorScheme.MONO, { mode: DitherMode.BURKES });
+    const floydSteinberg = ditherImage(image, ColorScheme.MONO, { mode: DitherMode.FLOYD_STEINBERG });
 
     let differences = 0;
     for (let i = 0; i < burkes.indices.length; i++) {
@@ -61,7 +61,7 @@ describe('Dithering Algorithms', () => {
     const image = createTestImage(10, 10, { r: 128, g: 128, b: 128 });
 
     const withDefault = ditherImage(image, ColorScheme.BWR);
-    const withBurkes = ditherImage(image, ColorScheme.BWR, DitherMode.BURKES);
+    const withBurkes = ditherImage(image, ColorScheme.BWR, { mode: DitherMode.BURKES });
 
     expect(withDefault.indices).toEqual(withBurkes.indices);
   });
@@ -69,8 +69,8 @@ describe('Dithering Algorithms', () => {
   it('serpentine=true and serpentine=false produce different results on gradient', () => {
     const image = createGradient(50, 50);
 
-    const withSerpentine    = ditherImage(image, ColorScheme.MONO, DitherMode.FLOYD_STEINBERG, true);
-    const withoutSerpentine = ditherImage(image, ColorScheme.MONO, DitherMode.FLOYD_STEINBERG, false);
+    const withSerpentine    = ditherImage(image, ColorScheme.MONO, { mode: DitherMode.FLOYD_STEINBERG, serpentine: true });
+    const withoutSerpentine = ditherImage(image, ColorScheme.MONO, { mode: DitherMode.FLOYD_STEINBERG, serpentine: false });
 
     let differences = 0;
     for (let i = 0; i < withSerpentine.indices.length; i++) {
@@ -82,7 +82,7 @@ describe('Dithering Algorithms', () => {
   it('alpha compositing: fully transparent red is treated as white', () => {
     // Fully transparent red (alpha=0) should composite to white
     const image = createTransparentTestImage(4, 4, { r: 255, g: 0, b: 0 }, 0);
-    const result = ditherImage(image, ColorScheme.MONO, DitherMode.NONE);
+    const result = ditherImage(image, ColorScheme.MONO, { mode: DitherMode.NONE });
 
     // All pixels should be white (index 1 in MONO: black=0, white=1)
     for (let i = 0; i < result.indices.length; i++) {
@@ -96,8 +96,8 @@ describe('Dithering Algorithms', () => {
     // Very low alpha black → composites nearly to white → maps to white (index 1)
     const nearlyTransparent = createTransparentTestImage(4, 4, { r: 0, g: 0, b: 0 }, 10);
 
-    const resultOpaque = ditherImage(opaque, ColorScheme.MONO, DitherMode.NONE);
-    const resultNearly = ditherImage(nearlyTransparent, ColorScheme.MONO, DitherMode.NONE);
+    const resultOpaque = ditherImage(opaque, ColorScheme.MONO, { mode: DitherMode.NONE });
+    const resultNearly = ditherImage(nearlyTransparent, ColorScheme.MONO, { mode: DitherMode.NONE });
 
     expect(resultOpaque.indices[0]).toBe(0);    // black
     expect(resultNearly.indices[0]).toBe(1);    // white
@@ -113,7 +113,7 @@ describe('Dithering Algorithms', () => {
 
   it('measured palette palette indices are within range', () => {
     const image = createGradient(20, 20);
-    const result = ditherImage(image, SPECTRA_7_3_6COLOR, DitherMode.FLOYD_STEINBERG);
+    const result = ditherImage(image, SPECTRA_7_3_6COLOR, { mode: DitherMode.FLOYD_STEINBERG });
 
     for (let i = 0; i < result.indices.length; i++) {
       expect(result.indices[i]).toBeGreaterThanOrEqual(0);

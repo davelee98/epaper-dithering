@@ -184,130 +184,37 @@ class ColorScheme(Enum):
 # Measured Palettes for Specific E-Paper Displays
 # ============================================================================
 #
-# These constants provide measured RGB values from real e-paper displays
-# for more accurate dithering. Pure RGB colors (e.g., White=255,255,255,
-# Red=255,0,0) are much brighter than real displays, which are typically
-# 30-87% darker due to reflective screen technology.
+# These constants are derived from the Rust core at import time — RGB values
+# are defined once in packages/rust/core/src/measured_palettes.rs.
 #
-# USAGE:
-#     from epaper_dithering import dither_image, SPECTRA_7_3_6COLOR
-#     result = dither_image(img, SPECTRA_7_3_6COLOR)
+# To add a new display palette:
+#   1. Add a new `pub static` palette + CATALOG entry in measured_palettes.rs
+#   2. Add the constant name here and export it in __init__.py
+#   No RGB values needed in Python.
 #
-# TO ADD YOUR DISPLAY:
-#     1. Measure colors following docs/CALIBRATION.md
-#     2. Create ColorPalette with measured values
-#     3. Add constant here
-#     4. Export in __init__.py
-#
-# IMPORTANT: Color names and order MUST match the corresponding ColorScheme!
-#            Reordering colors will break palette encoding compatibility.
-#
-# STATUS: All values below are THEORETICAL/PLACEHOLDER until measured.
-#         See docs/CALIBRATION.md for measurement procedures.
 # ============================================================================
 
-# 7.3" Spectra™ 6-color (BWGBRY scheme)
-# Measured: 2026-02-03
-# Equipment: iPhone 15 Pro Max RAW + Hue Play bars @ 6500K (154 mireds)
-# Method: Photographed calibration patches with white paper reference
-# Raw values in colors.txt, paper reference RGB(215,217,218)
-# Normalization: per-channel scaling value × (255 / paper_channel)
-SPECTRA_7_3_6COLOR = ColorPalette(
-    colors={
-        "black": (26, 13, 35),
-        "white": (185, 202, 205),
-        "yellow": (202, 184, 0),
-        "red": (121, 9, 0),
-        "blue": (0, 69, 139),
-        "green": (40, 82, 57),
-    },
-    accent="red",
-)
 
-# 7.3" Spectra™ 6-color (BWGBRY scheme) — v2 measurement
-# Measured: 2026-03-15
-# Equipment: iPhone 15 Pro Max RAW + Affinity (v3), A4 paper white reference
-# Method: DNG with linear tone curve, WB from A4 paper, uniform ×2.4 scale
-#         (paper measured at 100,100,100 → target 240 ≈ 88% A4 reflectance)
-SPECTRA_7_3_6COLOR_V2 = ColorPalette(
-    colors={
-        "black": (31, 24, 41),
-        "white": (168, 180, 182),
-        "yellow": (180, 173, 0),
-        "red": (113, 24, 19),
-        "blue": (36, 70, 139),
-        "green": (50, 84, 60),
-    },
-    accent="red",
-)
+def _load_measured_palettes() -> dict[str, "ColorPalette"]:
+    from . import _rs  # noqa: PLC0415  (local import avoids circular dependency at module level)
 
-# 4.26" Monochrome (MONO scheme)
-# TODO: Measure actual display
-MONO_4_26 = ColorPalette(
-    colors={
-        "black": (5, 5, 5),  # Measure: likely darker than pure black
-        "white": (220, 220, 220),  # Measure: real displays ~200-230, not 255
-    },
-    accent="black",
-)
+    result: dict[str, ColorPalette] = {}
+    for name, rgb_bytes, color_names, accent_idx in _rs.measured_palettes():
+        colors = {
+            color_names[i]: (rgb_bytes[i * 3], rgb_bytes[i * 3 + 1], rgb_bytes[i * 3 + 2])
+            for i in range(len(color_names))
+        }
+        result[name] = ColorPalette(colors=colors, accent=color_names[accent_idx])
+    return result
 
-# 4.2" BWRY (BWRY scheme)
-# TODO: Measure actual display
-BWRY_4_2 = ColorPalette(
-    colors={
-        "black": (5, 5, 5),  # Measure
-        "white": (200, 200, 200),  # Measure
-        "yellow": (200, 180, 0),  # Measure
-        "red": (120, 15, 5),  # Measure
-    },
-    accent="red",
-)
 
-# Solum BWR (harvested display, BWR scheme)
-# TODO: Measure actual display
-SOLUM_BWR = ColorPalette(
-    colors={
-        "black": (5, 5, 5),  # Measure
-        "white": (200, 200, 200),  # Measure
-        "red": (120, 15, 5),  # Measure
-    },
-    accent="red",
-)
+_MEASURED = _load_measured_palettes()
 
-# Hanshow BWR (harvested display, BWR scheme)
-# TODO: Measure actual display
-HANSHOW_BWR = ColorPalette(
-    colors={
-        "black": (5, 5, 5),  # Measure
-        "white": (200, 200, 200),  # Measure
-        "red": (120, 15, 5),  # Measure
-    },
-    accent="red",
-)
-
-# Hanshow BWY (harvested display, BWY scheme)
-# TODO: Measure actual display
-HANSHOW_BWY = ColorPalette(
-    colors={
-        "black": (5, 5, 5),  # Measure
-        "white": (200, 200, 200),  # Measure
-        "yellow": (200, 180, 0),  # Measure
-    },
-    accent="yellow",
-)
-
-# 3.97" BWRY — EP397YR_800x480 (panel_ic_type=0x37 / 55), BWRY scheme
-# Measured: 2026-03-06
-# Equipment: iPhone RAW
-# Method: Photographed calibration patches with white paper reference
-# Paper reference RGB(205,205,205); normalization: value × (255/205) per channel
-# Yellow blue channel clipped to 0 (expected for yellow; kept as-is)
-BWRY_3_97 = ColorPalette(
-    colors={
-        "black": (10, 7, 14),
-        "white": (173, 178, 174),
-        "yellow": (172, 128, 0),
-        "red": (85, 24, 14),
-    },
-    accent="red",
-)
+SPECTRA_7_3_6COLOR: ColorPalette = _MEASURED["SPECTRA_7_3_6COLOR"]
+SPECTRA_7_3_6COLOR_V2: ColorPalette = _MEASURED["SPECTRA_7_3_6COLOR_V2"]
+MONO_4_26: ColorPalette = _MEASURED["MONO_4_26"]
+BWRY_4_2: ColorPalette = _MEASURED["BWRY_4_2"]
+BWRY_3_97: ColorPalette = _MEASURED["BWRY_3_97"]
+SOLUM_BWR: ColorPalette = _MEASURED["SOLUM_BWR"]
+HANSHOW_BWR: ColorPalette = _MEASURED["HANSHOW_BWR"]
+HANSHOW_BWY: ColorPalette = _MEASURED["HANSHOW_BWY"]

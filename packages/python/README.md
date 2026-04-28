@@ -22,10 +22,11 @@ pip install epaper-dithering
 
 ## Features
 
-- **Perceptually Correct**: Uses linear RGB color space with gamma correction for accurate error diffusion
-- **8 Dithering Algorithms**: From simple ordered dithering to high-quality Jarvis-Judice-Ninke
+- **Rust Core**: All dithering runs in a compiled Rust extension — fast enough for 800×480 images in ~30ms
+- **Perceptually Correct**: Weighted Cartesian OKLab color matching — preserves hue without the achromatic-attractor bug that plagues LCH-weighted approaches
+- **9 Dithering Algorithms**: From simple ordered dithering to high-quality Jarvis-Judice-Ninke
 - **8 Color Schemes**: Support for mono, 3-color, 4-color, 6-color, and grayscale e-paper displays
-- **Tone Mapping**: Dynamic range compression maps image luminance to the display's actual range for smoother dithering
+- **Pre-dither Adjustments**: Per-image exposure, saturation, shadows, highlights, dynamic-range compression, and gamut compression — all orthogonal knobs you can mix freely
 - **Serpentine Scanning**: Reduces directional artifacts in error diffusion (enabled by default)
 - **RGBA Support**: Automatic compositing on white background for transparent images
 
@@ -39,10 +40,27 @@ from epaper_dithering import dither_image, ColorScheme, DitherMode
 image = Image.open("photo.jpg")
 
 # Apply dithering for a black/white/red display
-dithered = dither_image(image, ColorScheme.BWR, DitherMode.FLOYD_STEINBERG)
+dithered = dither_image(image, ColorScheme.BWR, mode=DitherMode.FLOYD_STEINBERG)
 
 # Save result
 dithered.save("output.png")
+```
+
+All arguments after `color_scheme` are keyword-only:
+
+```python
+dither_image(
+    image, palette,
+    *,
+    mode=DitherMode.BURKES,    # algorithm
+    serpentine=True,           # alternate row scan direction
+    exposure=1.0,              # linear-RGB multiplier (1.0 = no change)
+    saturation=1.0,            # OKLab saturation (1.0 = no change, 0.0 = grayscale)
+    shadows=0.0,               # shadow lift, S-curve lower half
+    highlights=0.0,            # highlight compression, S-curve upper half
+    tone="auto",               # dynamic-range compression: "auto" | 0.0–1.0
+    gamut="auto",              # gamut compression: "auto" | 0.0–1.0
+)
 ```
 
 ## Supported Color Schemes
@@ -78,19 +96,15 @@ dithered.save("output.png")
 from PIL import Image
 from epaper_dithering import dither_image, ColorScheme, DitherMode
 
-# Load image
 img = Image.open("photo.jpg")
 
-# Apply Floyd-Steinberg dithering for BWR display
-result = dither_image(img, ColorScheme.BWR, DitherMode.FLOYD_STEINBERG)
+result = dither_image(img, ColorScheme.BWR, mode=DitherMode.FLOYD_STEINBERG)
 result.save("dithered.png")
 ```
 
 ### All Color Schemes
 
 ```python
-from epaper_dithering import ColorScheme
-
 # Black and white only
 dithered = dither_image(img, ColorScheme.MONO)
 
@@ -112,10 +126,10 @@ By default, error diffusion algorithms use serpentine scanning (alternating scan
 
 ```python
 # Default: serpentine scanning (recommended for best quality)
-result = dither_image(img, ColorScheme.BWR, DitherMode.FLOYD_STEINBERG, serpentine=True)
+result = dither_image(img, ColorScheme.BWR, mode=DitherMode.FLOYD_STEINBERG, serpentine=True)
 
 # Disable serpentine for raster scanning (left-to-right only)
-result = dither_image(img, ColorScheme.BWR, DitherMode.FLOYD_STEINBERG, serpentine=False)
+result = dither_image(img, ColorScheme.BWR, mode=DitherMode.FLOYD_STEINBERG, serpentine=False)
 ```
 
 Note: The `serpentine` parameter only affects error diffusion algorithms (Floyd-Steinberg, Burkes, Atkinson, Sierra, Sierra Lite, Stucki, Jarvis-Judice-Ninke). It has no effect on NONE and ORDERED modes.
@@ -124,7 +138,7 @@ Note: The `serpentine` parameter only affects error diffusion algorithms (Floyd-
 
 E-paper displays can't reproduce the full luminance range of digital images. Pure white on a display is much darker than (255, 255, 255), and pure black is lighter than (0, 0, 0). Without tone compression, dithering tries to represent unreachable brightness levels, causing large accumulated errors and noisy output.
 
-Tone compression remaps image luminance to the display's actual range before dithering. Based on [`fast_compress_dynamic_range()`](https://github.com/aitjcize/esp32-photoframe) from esp32-photoframe by aitjcize. It is enabled by default (`tone_compression="auto"`) and only applies when using measured `ColorPalette` instances:
+Tone compression remaps image luminance to the display's actual range before dithering. Based on [`fast_compress_dynamic_range()`](https://github.com/aitjcize/esp32-photoframe) from esp32-photoframe by aitjcize. It is enabled by default (`tone="auto"`) and only applies when using measured `ColorPalette` instances:
 
 - **`"auto"`** (default): Analyzes the image histogram and remaps its actual luminance range to the display range. Maximizes contrast by stretching only the used range.
 - **`0.0-1.0`**: Fixed linear compression strength. `1.0` maps the full [0,1] range to the display range. `0.0` disables compression.
@@ -133,16 +147,54 @@ Tone compression remaps image luminance to the display's actual range before dit
 from epaper_dithering import dither_image, SPECTRA_7_3_6COLOR, DitherMode
 
 # Default: auto tone compression (recommended)
-result = dither_image(img, SPECTRA_7_3_6COLOR, DitherMode.FLOYD_STEINBERG)
+result = dither_image(img, SPECTRA_7_3_6COLOR, mode=DitherMode.FLOYD_STEINBERG)
 
 # Fixed linear compression
-result = dither_image(img, SPECTRA_7_3_6COLOR, DitherMode.FLOYD_STEINBERG, tone_compression=1.0)
+result = dither_image(img, SPECTRA_7_3_6COLOR, mode=DitherMode.FLOYD_STEINBERG, tone=1.0)
 
 # Disable tone compression
-result = dither_image(img, SPECTRA_7_3_6COLOR, DitherMode.FLOYD_STEINBERG, tone_compression=0.0)
+result = dither_image(img, SPECTRA_7_3_6COLOR, mode=DitherMode.FLOYD_STEINBERG, tone=0.0)
 ```
 
-Note: `tone_compression` has no effect when using theoretical `ColorScheme` palettes (e.g., `ColorScheme.BWR`), since their black/white values already span the full range.
+Note: `tone` has no effect when using theoretical `ColorScheme` palettes (e.g., `ColorScheme.BWR`), since their black/white values already span the full range.
+
+#### Gamut Compression
+
+Some images contain highly saturated colors that a limited palette simply cannot reproduce (e.g. vivid purple on a BWGBRY display). Without gamut compression, the ditherer tries to mix palette colors to approximate the hue — often producing muddy results. Gamut compression pre-blends out-of-gamut pixels toward the nearest palette color before dithering, giving error diffusion a better starting point.
+
+```python
+# Default: auto gamut compression (activates only when image exceeds palette gamut)
+result = dither_image(img, SPECTRA_7_3_6COLOR, mode=DitherMode.BURKES)
+
+# Fixed strength (0.7–0.9 recommended for very saturated images)
+result = dither_image(img, SPECTRA_7_3_6COLOR, mode=DitherMode.BURKES, gamut=0.8)
+
+# Disable
+result = dither_image(img, SPECTRA_7_3_6COLOR, mode=DitherMode.BURKES, gamut=0.0)
+```
+
+Note: `gamut` also has no effect for theoretical `ColorScheme` palettes.
+
+#### Per-Image Tonal Adjustments
+
+`exposure`, `saturation`, `shadows`, and `highlights` let you tweak the image *before* tone/gamut compression. Each is independent — set just the ones you want. All default to identity (no effect).
+
+```python
+# Brighten and boost saturation for vivid output
+result = dither_image(img, SPECTRA_7_3_6COLOR, exposure=1.3, saturation=1.4)
+
+# Lift shadows on a dark image
+result = dither_image(img, SPECTRA_7_3_6COLOR, shadows=0.5)
+
+# Compress highlights on an overexposed image
+result = dither_image(img, SPECTRA_7_3_6COLOR, highlights=0.7)
+
+# Combine for a "vivid photo" look
+result = dither_image(img, SPECTRA_7_3_6COLOR,
+                      exposure=1.1, saturation=1.3, shadows=0.3, highlights=0.5)
+```
+
+Pipeline order: `exposure → saturation → shadows/highlights → tone → gamut → dither`.
 
 #### RGBA Images
 
@@ -175,18 +227,20 @@ The library includes measured palettes for common displays:
 from epaper_dithering import dither_image, SPECTRA_7_3_6COLOR, DitherMode
 
 # Use measured palette for Spectra 7.3" 6-color display
-result = dither_image(img, SPECTRA_7_3_6COLOR, DitherMode.FLOYD_STEINBERG)
+result = dither_image(img, SPECTRA_7_3_6COLOR, mode=DitherMode.FLOYD_STEINBERG)
 ```
 
 **Available measured palettes:**
-- `SPECTRA_7_3_6COLOR` - 7.3" Spectra™ 6-color (BWGBRY)
+- `SPECTRA_7_3_6COLOR` - 7.3" Spectra™ 6-color (BWGBRY), v1 measurement
+- `SPECTRA_7_3_6COLOR_V2` - 7.3" Spectra™ 6-color (BWGBRY), v2 measurement (recommended)
 - `MONO_4_26` - 4.26" Monochrome
 - `BWRY_4_2` - 4.2" BWRY
+- `BWRY_3_97` - 3.97" BWRY
 - `SOLUM_BWR` - Solum BWR
 - `HANSHOW_BWR` - Hanshow BWR
 - `HANSHOW_BWY` - Hanshow BWY
 
-**Note**: Pre-defined palettes start with theoretical values. See [CALIBRATION.md](docs/CALIBRATION.md) for measuring your specific display.
+See [CALIBRATION.md](docs/CALIBRATION.md) for measuring your specific display.
 
 ### Creating Custom Measured Palettes
 
@@ -206,7 +260,7 @@ my_display = ColorPalette(
 )
 
 # Use it directly
-result = dither_image(img, my_display, DitherMode.FLOYD_STEINBERG)
+result = dither_image(img, my_display, mode=DitherMode.FLOYD_STEINBERG)
 ```
 
 ### Measurement Quick Start
@@ -222,8 +276,11 @@ See [docs/CALIBRATION.md](docs/CALIBRATION.md) for detailed measurement procedur
 ## Development
 
 ```bash
-# Install with dev dependencies
+# Install dependencies (requires Rust toolchain: https://rustup.rs)
 uv sync --all-extras
+
+# Build and install the Rust extension (required before running tests)
+uv run maturin develop --release
 
 # Run tests
 uv run pytest tests/ -v
