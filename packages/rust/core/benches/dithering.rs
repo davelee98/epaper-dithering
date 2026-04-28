@@ -5,12 +5,12 @@ use epaper_dithering_core::{
         ordered_dither,
     },
     color_space::srgb_channel_to_linear,
-    color_space_lab::{PaletteLab, match_pixel_lch, rgb_to_oklab},
-    dither,
+    color_space_lab::{PaletteLab, WAB, match_pixel_oklab, rgb_to_oklab},
+    dither, DitherConfig,
     enums::{DitherMode, GamutCompression, ToneCompression},
     measured_palettes::SPECTRA_7_3_6COLOR,
     palettes::ColorScheme,
-    tone_map::{auto_compress_dynamic_range, auto_gamut_compress, compress_dynamic_range, gamut_compress},
+    tone_map::{auto_compress_dynamic_range, compress_dynamic_range, gamut_compress},
     types::ImageBuffer,
 };
 
@@ -149,9 +149,9 @@ fn bench_color_matching(c: &mut Criterion) {
 
     let mut group = c.benchmark_group("color_matching");
     group.throughput(Throughput::Elements(N as u64));
-    group.bench_function("match_pixel_lch_6color", |b| {
+    group.bench_function("match_pixel_oklab_6color", |b| {
         b.iter(|| {
-            pixels.iter().map(|&px| match_pixel_lch(px, &palette_lab)).sum::<usize>()
+            pixels.iter().map(|&px| match_pixel_oklab(px, &palette_lab, WAB)).sum::<usize>()
         })
     });
     group.finish();
@@ -182,14 +182,6 @@ fn bench_preprocessing(c: &mut Criterion) {
         )
     });
 
-    group.bench_function("auto_gamut_compress", |b| {
-        b.iter_batched(
-            || synthetic_linear(w, h),
-            |mut pixels| auto_gamut_compress(&mut pixels, palette),
-            criterion::BatchSize::SmallInput,
-        )
-    });
-
     group.bench_function("gamut_compress_full", |b| {
         b.iter_batched(
             || synthetic_linear(w, h),
@@ -213,27 +205,23 @@ fn bench_full_pipeline(c: &mut Criterion) {
 
     group.bench_function("burkes_auto_tone_auto_gamut_6color", |b| {
         b.iter(|| {
-            dither(
-                &img,
-                &SPECTRA_7_3_6COLOR,
-                DitherMode::Burkes,
-                true,
-                ToneCompression::Auto,
-                GamutCompression::Auto,
-            )
+            dither(&img, &SPECTRA_7_3_6COLOR, DitherConfig {
+                mode: DitherMode::Burkes,
+                tone: ToneCompression::Auto,
+                gamut: GamutCompression::Auto,
+                ..Default::default()
+            })
         })
     });
 
     group.bench_function("burkes_no_preprocessing_mono", |b| {
         b.iter(|| {
-            dither(
-                &img,
-                ColorScheme::Mono,
-                DitherMode::Burkes,
-                true,
-                ToneCompression::Fixed(0.0),
-                GamutCompression::None,
-            )
+            dither(&img, ColorScheme::Mono, DitherConfig {
+                mode: DitherMode::Burkes,
+                tone: ToneCompression::Fixed(0.0),
+                gamut: GamutCompression::None,
+                ..Default::default()
+            })
         })
     });
 
@@ -292,14 +280,12 @@ fn bench_full_res(c: &mut Criterion) {
 
     group.bench_function("burkes_spectra6_auto", |b| {
         b.iter(|| {
-            dither(
-                &img,
-                &SPECTRA_7_3_6COLOR,
-                DitherMode::Burkes,
-                true,
-                ToneCompression::Auto,
-                GamutCompression::Auto,
-            )
+            dither(&img, &SPECTRA_7_3_6COLOR, DitherConfig {
+                mode: DitherMode::Burkes,
+                tone: ToneCompression::Auto,
+                gamut: GamutCompression::Auto,
+                ..Default::default()
+            })
         })
     });
 

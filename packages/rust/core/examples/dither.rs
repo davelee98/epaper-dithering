@@ -21,7 +21,7 @@ use epaper_dithering_core::measured_palettes::{
 };
 use epaper_dithering_core::palettes::{ColorScheme, Palette};
 use epaper_dithering_core::types::ImageBuffer;
-use epaper_dithering_core::dither;
+use epaper_dithering_core::{dither, DitherConfig};
 use image::{ImageReader, RgbImage};
 use std::env;
 
@@ -104,7 +104,9 @@ fn main() {
     println!("Scheme: {scheme_name}  Mode: {mode_name}  Tone: {tone_name}  Gamut: {gamut_name}");
 
     let t0 = std::time::Instant::now();
-    let indices = dither(&buf, palette, mode, true, tone, gamut);
+    let indices = dither(&buf, palette, DitherConfig {
+        mode, tone, gamut, ..Default::default()
+    });
     let elapsed = t0.elapsed();
 
     println!("Dither: {:.1}ms  ({} mpx/s)",

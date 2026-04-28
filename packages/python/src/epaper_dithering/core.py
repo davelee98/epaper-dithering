@@ -15,6 +15,7 @@ _LOGGER = logging.getLogger(__name__)
 
 
 def _to_rgb_bytes(image: Image.Image) -> tuple[bytes, int, int]:
+    """Convert PIL image to flat RGB bytes. Composites RGBA on white."""
     if image.mode == "RGBA":
         bg = Image.new("RGB", image.size, (255, 255, 255))
         bg.paste(image, mask=image.split()[3])
@@ -26,78 +27,91 @@ def _to_rgb_bytes(image: Image.Image) -> tuple[bytes, int, int]:
 
 
 def _compression(v: float | str) -> float | None:
-    """Map Python compression param to Rust Option<f64>: None=auto, float=fixed."""
+    """Map Python compression param to Rust Option<f64>: 'auto' → None, float → Some."""
     return None if v == "auto" else float(v)
 
 
-def dither_image(
+def dither_image(  # pylint: disable=too-many-arguments
     image: Image.Image,
     color_scheme: ColorScheme | ColorPalette,
+    *,
     mode: DitherMode = DitherMode.BURKES,
     serpentine: bool = True,
-    tone_compression: float | str = "auto",
-    gamut_compression: float | str = "auto",
+    exposure: float = 1.0,
+    saturation: float = 1.0,
+    shadows: float = 0.0,
+    highlights: float = 0.0,
+    tone: float | str = "auto",
+    gamut: float | str = "auto",
 ) -> Image.Image:
-    """Apply dithering to image for e-paper display.
+    """Apply dithering to an image for e-paper display.
 
     Args:
-        image: Input image (RGB or RGBA)
-        color_scheme: Target display color scheme OR measured ColorPalette
-        mode: Dithering algorithm (default: BURKES)
-        serpentine: Use serpentine scanning for error diffusion (default: True).
-            Alternates scan direction each row to reduce directional artifacts.
-            Only applies to error diffusion algorithms, ignored for NONE and ORDERED.
-        tone_compression: Dynamic range compression (default: "auto").
-            "auto" = analyze image histogram and fit to display range.
-            0.0 = disabled, 0.0-1.0 = fixed linear compression strength.
-            Only applies to measured ColorPalette.
-        gamut_compression: Pre-dithering gamut compression (default: "auto").
-            Blends out-of-gamut pixels toward their nearest palette color before
-            dithering. Useful for images with highly saturated colors the palette
-            cannot reproduce (e.g. vivid purple on a BWGBRY display).
-            "auto" = only compress when image content genuinely exceeds the
-            palette gamut; auto mode only activates for measured ColorPalette.
-            0.0 = disabled, 0.7-0.9 = fixed strength (works on all palette types).
+        image: Input image (RGB or RGBA). RGBA is composited on white.
+        color_scheme: Target display palette — `ColorScheme` enum (idealized) or
+            measured `ColorPalette` instance.
+
+    Keyword Args:
+        mode: Dithering algorithm (default: BURKES).
+        serpentine: Alternate row scan direction for error diffusion (default: True).
+            Ignored for NONE and ORDERED modes.
+        exposure: Linear-RGB exposure multiplier. 1.0 = no change, 2.0 = +1 stop.
+        saturation: OKLab saturation multiplier. 1.0 = no change, 0.0 = grayscale.
+            Hue-preserving.
+        shadows: Shadow lift strength (S-curve lower half). 0.0 = off, 1.0 = strong.
+        highlights: Highlight compression strength (S-curve upper half). 0.0 = off, 1.0 = strong.
+        tone: Dynamic-range compression. "auto" = histogram-based fit to display range,
+            0.0 = off, 0.0–1.0 = fixed strength. Only meaningful for measured palettes.
+        gamut: Gamut compression for out-of-gamut pixels. "auto" = full strength on
+            out-of-gamut pixels (smoothstep), 0.0 = off, 0.0–1.0 = fixed strength.
 
     Returns:
-        Dithered palette image matching color scheme
+        Dithered palette-mode (`"P"`) PIL Image matching the color scheme.
     """
-    if not isinstance(tone_compression, (float, str)):
-        raise TypeError(f"tone_compression must be float or 'auto', got {type(tone_compression).__name__}")
-    if not isinstance(gamut_compression, (float, str)):
-        raise TypeError(f"gamut_compression must be float or 'auto', got {type(gamut_compression).__name__}")
+    if not isinstance(tone, (float, int, str)):
+        raise TypeError(f"tone must be float or 'auto', got {type(tone).__name__}")
+    if not isinstance(gamut, (float, int, str)):
+        raise TypeError(f"gamut must be float or 'auto', got {type(gamut).__name__}")
 
     scheme_name = color_scheme.name if isinstance(color_scheme, ColorScheme) else "custom"
     _LOGGER.debug("Applying %s dithering for %s palette", mode.name, scheme_name)
 
     pixels, width, height = _to_rgb_bytes(image)
 
+    common_kwargs: dict[str, object] = {
+        "mode_id": int(mode),
+        "serpentine": serpentine,
+        "exposure": exposure,
+        "saturation": saturation,
+        "shadows": shadows,
+        "highlights": highlights,
+        "tone": _compression(tone),
+        "gamut": _compression(gamut),
+    }
+
     if isinstance(color_scheme, ColorScheme):
+        # Idealized scheme: tone/gamut auto don't apply; force them off.
+        common_kwargs["tone"] = 0.0
+        common_kwargs["gamut"] = 0.0
         indices = _rs.dither_image(
             pixels,
             width,
             height,
-            color_scheme.value,  # type: ignore[arg-type]  # non-standard enum pattern: _value_ is int
-            int(mode),
-            serpentine,
-            0.0,
-            0.0,  # tone/gamut off — idealized palette has no measured display range
+            scheme_id=color_scheme.value,  # type: ignore[arg-type]  # non-standard enum: _value_ is int
+            **common_kwargs,  # type: ignore[arg-type]
         )
         palette_colors = list(color_scheme.palette.colors.values())
     else:
         palette_colors = list(color_scheme.colors.values())
         palette_bytes = bytes(c for rgb in palette_colors for c in rgb)
         accent_idx = list(color_scheme.colors.keys()).index(color_scheme.accent)
-        indices = _rs.dither_image_palette(
+        indices = _rs.dither_image(
             pixels,
             width,
             height,
-            palette_bytes,
-            accent_idx,
-            int(mode),
-            serpentine,
-            _compression(tone_compression),
-            _compression(gamut_compression),
+            palette_bytes=palette_bytes,
+            accent_idx=accent_idx,
+            **common_kwargs,  # type: ignore[arg-type]
         )
 
     out = Image.new("P", (width, height))

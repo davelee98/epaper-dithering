@@ -3,7 +3,7 @@ import { DitherMode } from './enums';
 import { ColorScheme, getPalette } from './palettes';
 import {
   dither_image as wasmDitherImage,
-  dither_image_palette as wasmDitherImagePalette,
+  composite_rgba as wasmCompositeRgba,
   __wbg_set_wasm,
   __wbindgen_init_externref_table,
   __wbindgen_cast_0000000000000001,
@@ -11,7 +11,6 @@ import {
 import wasmBytes from './wasm-core/epaper_dithering_wasm_bg.wasm';
 
 // Synchronous WASM initialization — runs once at module load time.
-// The WASM module imports two callbacks from the JS side; we provide them here.
 const wasmModule = new WebAssembly.Module(wasmBytes as unknown as ArrayBuffer);
 const wasmInstance = new WebAssembly.Instance(wasmModule, {
   './epaper_dithering_wasm_bg.js': {
@@ -23,66 +22,92 @@ __wbg_set_wasm(wasmInstance.exports);
 (wasmInstance.exports as Record<string, () => void>).__wbindgen_start?.();
 
 /**
- * Apply dithering algorithm to image for e-paper display.
+ * Options for `ditherImage`. All fields are optional — defaults are sensible.
  *
- * @param image - Input image buffer (RGBA format). Alpha is composited on white.
- * @param colorScheme - Target color scheme (ColorScheme enum) or measured palette (ColorPalette)
- * @param mode - Dithering algorithm (default: BURKES)
- * @param serpentine - Alternate row direction to reduce artifacts (default: true)
- * @param toneCompression - Dynamic range compression for measured palettes (default: 'auto').
- *   'auto' = analyze histogram and fit to display range.
- *   0.0 = disabled, 0.0–1.0 = fixed strength. Ignored for ColorScheme.
- * @param gamutCompression - Pre-dithering gamut compression (default: 'auto').
- *   Blends out-of-gamut pixels toward nearest palette color before dithering.
- *   'auto' = activate only when image exceeds palette gamut (measured palettes only).
- *   0.0 = disabled, 0.7–0.9 = fixed strength. Ignored for ColorScheme.
- * @returns Palette-indexed image buffer
+ * Pre-processing pipeline (each step is a no-op at its identity value):
+ * `exposure → saturation → shadows/highlights → tone → gamut → dither`.
+ */
+export interface DitherOptions {
+  /** Dithering algorithm. Default: `DitherMode.BURKES`. */
+  mode?: DitherMode;
+  /** Alternate row scan direction for error diffusion. Default: `true`. */
+  serpentine?: boolean;
+  /** Linear-RGB exposure multiplier. 1.0 = no change, 2.0 = +1 stop. Default: `1.0`. */
+  exposure?: number;
+  /** OKLab saturation multiplier. 1.0 = no change, 0.0 = grayscale. Default: `1.0`. */
+  saturation?: number;
+  /** Shadow lift strength (S-curve lower half). 0.0 = off, 1.0 = strong. Default: `0.0`. */
+  shadows?: number;
+  /** Highlight compression strength (S-curve upper half). 0.0 = off, 1.0 = strong. Default: `0.0`. */
+  highlights?: number;
+  /** Dynamic-range compression: `'auto'` | `'off'` | 0.0–1.0. Default: `'auto'`. */
+  tone?: number | 'auto' | 'off';
+  /** Gamut compression: `'auto'` | `'off'` | 0.0–1.0. Default: `'auto'`. */
+  gamut?: number | 'auto' | 'off';
+}
+
+/**
+ * Apply dithering to an RGBA image for an e-paper display.
+ *
+ * @param image     Input RGBA image. Alpha is composited on white.
+ * @param palette   Target palette: `ColorScheme` enum (idealized) or `ColorPalette` (measured).
+ * @param options   Per-call overrides — see {@link DitherOptions}.
+ * @returns Palette-indexed image buffer.
  */
 export function ditherImage(
   image: ImageBuffer,
-  colorScheme: ColorScheme | ColorPalette,
-  mode: DitherMode = DitherMode.BURKES,
-  serpentine: boolean = true,
-  toneCompression: number | 'auto' = 'auto',
-  gamutCompression: number | 'auto' = 'auto',
+  palette: ColorScheme | ColorPalette,
+  options: DitherOptions = {},
 ): PaletteImageBuffer {
-  const pixels = rgbaToRgb(image);
+  const {
+    mode = DitherMode.BURKES,
+    serpentine = true,
+    exposure = 1.0,
+    saturation = 1.0,
+    shadows = 0.0,
+    highlights = 0.0,
+    tone = 'auto',
+    gamut = 'auto',
+  } = options;
 
-  if (typeof colorScheme === 'number') {
-    // ColorScheme (idealized palette): tone/gamut compression are disabled
-    const indices = wasmDitherImage(pixels, image.width, colorScheme, mode, serpentine, 0.0, 0.0);
-    const palette = Object.values(getPalette(colorScheme).colors);
-    return { width: image.width, height: image.height, indices, palette };
+  const rgba = new Uint8Array(image.data.buffer, image.data.byteOffset, image.data.byteLength);
+  const pixels = wasmCompositeRgba(rgba);
+
+  // Idealized schemes don't have a measured display range, so tone/gamut don't apply.
+  const isScheme = typeof palette === 'number';
+  const toneArg  = isScheme ? 0.0 : parseCompression(tone);
+  const gamutArg = isScheme ? 0.0 : parseCompression(gamut);
+
+  let schemeId = 0;
+  let paletteBytes: Uint8Array;
+  let accentIdx = 0;
+  let outputColors: { r: number; g: number; b: number }[];
+
+  if (isScheme) {
+    schemeId = palette as number;
+    paletteBytes = new Uint8Array(0);
+    outputColors = Object.values(getPalette(palette).colors);
   } else {
-    // Measured ColorPalette: pass user-supplied compression params
-    const paletteColors = Object.values(colorScheme.colors);
-    const paletteBytes = new Uint8Array(paletteColors.flatMap(c => [c.r, c.g, c.b]));
-    const accentIdx = Object.keys(colorScheme.colors).indexOf(colorScheme.accent);
-    const indices = wasmDitherImagePalette(
-      pixels, image.width, paletteBytes, accentIdx, mode, serpentine,
-      parseCompression(toneCompression),
-      parseCompression(gamutCompression),
-    );
-    return { width: image.width, height: image.height, indices, palette: paletteColors };
+    const colors = Object.values(palette.colors);
+    paletteBytes = new Uint8Array(colors.flatMap(c => [c.r, c.g, c.b]));
+    accentIdx = Object.keys(palette.colors).indexOf(palette.accent);
+    outputColors = colors;
   }
+
+  const indices = wasmDitherImage(
+    pixels, image.width,
+    schemeId, paletteBytes, accentIdx,
+    mode as number, serpentine,
+    exposure, saturation, shadows, highlights,
+    toneArg, gamutArg,
+  );
+
+  return { width: image.width, height: image.height, indices, palette: outputColors };
 }
 
-/** Convert RGBA input to flat RGB bytes, compositing transparency on white (sRGB space). */
-function rgbaToRgb(image: ImageBuffer): Uint8Array {
-  const n = image.width * image.height;
-  const rgb = new Uint8Array(n * 3);
-  for (let i = 0; i < n; i++) {
-    const s = i * 4;
-    const a = image.data[s + 3] / 255;
-    const inv = 1 - a;
-    rgb[i * 3]     = Math.round(image.data[s]     * a + 255 * inv);
-    rgb[i * 3 + 1] = Math.round(image.data[s + 1] * a + 255 * inv);
-    rgb[i * 3 + 2] = Math.round(image.data[s + 2] * a + 255 * inv);
-  }
-  return rgb;
-}
-
-/** Map 'auto' → undefined (Rust None = auto), number → pass through (Rust Some). */
-function parseCompression(v: number | 'auto'): number | undefined {
-  return v === 'auto' ? undefined : v;
+/** Map `'auto'` → `undefined` (Rust None = auto), `'off'` → 0.0, number → pass through. */
+function parseCompression(v: number | 'auto' | 'off'): number | undefined {
+  if (v === 'auto') return undefined;
+  if (v === 'off')  return 0.0;
+  return v;
 }

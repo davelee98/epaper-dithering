@@ -6,7 +6,7 @@
 use rayon::prelude::*;
 
 use crate::color_space::srgb_channel_to_linear;
-use crate::color_space_lab::rgb_to_oklab;
+use crate::color_space_lab::{oklab_to_rgb, rgb_to_oklab, OkLab};
 use crate::palettes::Palette;
 
 // ITU-R BT.709 / sRGB luminance coefficients
@@ -40,6 +40,76 @@ fn percentile_pair(values: &[f64], p_low: f64, p_high: f64) -> (f64, f64) {
     let idx_lo = ((p_low  / 100.0) * n as f64).round() as usize;
     let idx_hi = ((p_high / 100.0) * n as f64).round() as usize;
     (sorted[idx_lo.min(sorted.len() - 1)], sorted[idx_hi.min(sorted.len() - 1)])
+}
+
+// ── apply_exposure ────────────────────────────────────────────────────────────
+
+/// Apply exposure adjustment (linear multiply on all channels).
+///
+/// `factor > 1.0` brightens, `< 1.0` darkens. 1.0 is a no-op fast path.
+/// Operates on linear RGB pixels.
+pub fn apply_exposure(pixels: &mut [[f64; 3]], factor: f64) {
+    if (factor - 1.0).abs() < 1e-9 {
+        return;
+    }
+    pixels.par_iter_mut().for_each(|pixel| {
+        pixel[0] = (pixel[0] * factor).clamp(0.0, 1.0);
+        pixel[1] = (pixel[1] * factor).clamp(0.0, 1.0);
+        pixel[2] = (pixel[2] * factor).clamp(0.0, 1.0);
+    });
+}
+
+// ── adjust_saturation ─────────────────────────────────────────────────────────
+
+/// Adjust saturation in OKLab space. `factor > 1.0` boosts, `< 1.0` reduces, 1.0 is identity.
+///
+/// Scales `a` and `b` components equally, which scales chroma while keeping the hue
+/// (`atan2(b, a)`) unchanged. Operates on linear RGB pixels.
+pub fn adjust_saturation(pixels: &mut [[f64; 3]], factor: f64) {
+    if (factor - 1.0).abs() < 1e-9 {
+        return;
+    }
+    pixels.par_iter_mut().for_each(|pixel| {
+        let lab = rgb_to_oklab(pixel[0], pixel[1], pixel[2]);
+        let scaled = OkLab {
+            l: lab.l,
+            a: (lab.a * factor).clamp(-1.0, 1.0),
+            b: (lab.b * factor).clamp(-1.0, 1.0),
+        };
+        *pixel = oklab_to_rgb(scaled);
+    });
+}
+
+// ── apply_shadows_highlights ──────────────────────────────────────────────────
+
+/// Apply shadow lift and highlight compression as a luminance-only S-curve.
+///
+/// `shadows` controls lift on the lower half (0.0 = identity, 1.0 = strong; power = 1 − shadows).
+/// `highlights` controls compression on the upper half (0.0 = identity, 1.0 = strong; power = 1 + highlights).
+///
+/// Each half is independent — `shadows = 0` leaves shadows alone even if `highlights > 0`.
+/// Hue is preserved by scaling all three channels by `Y' / Y`.
+pub fn apply_shadows_highlights(pixels: &mut [[f64; 3]], shadows: f64, highlights: f64) {
+    if shadows <= 0.0 && highlights <= 0.0 {
+        return;
+    }
+    pixels.par_iter_mut().for_each(|pixel| {
+        let y = luminance(*pixel);
+        if y <= 1e-6 {
+            return;
+        }
+        let y_prime = if y <= 0.5 {
+            let t = y / 0.5;
+            0.5 * t.powf(1.0 - shadows)
+        } else {
+            let t = (y - 0.5) / 0.5;
+            0.5 + 0.5 * t.powf(1.0 + highlights)
+        };
+        let scale = (y_prime / y).clamp(0.0, 1e6);
+        pixel[0] = (pixel[0] * scale).clamp(0.0, 1.0);
+        pixel[1] = (pixel[1] * scale).clamp(0.0, 1.0);
+        pixel[2] = (pixel[2] * scale).clamp(0.0, 1.0);
+    });
 }
 
 // ── compress_dynamic_range ────────────────────────────────────────────────────
@@ -355,6 +425,62 @@ mod tests {
         gamut_compress(&mut pixels, pal, 1.0);
         let moved = pixels[0].iter().zip(original.iter()).any(|(a, b)| (a - b).abs() > 1e-6);
         assert!(moved, "vivid red should be moved toward the palette by gamut_compress");
+    }
+
+    #[test]
+    fn exposure_factor_one_is_identity() {
+        let mut pixels = vec![[0.5_f64, 0.2, 0.1]];
+        let original = pixels.clone();
+        apply_exposure(&mut pixels, 1.0);
+        assert_eq!(pixels, original);
+    }
+
+    #[test]
+    fn exposure_factor_greater_than_one_brightens() {
+        let mut pixels = vec![[0.2_f64, 0.2, 0.2]];
+        apply_exposure(&mut pixels, 2.0);
+        assert!(pixels[0][0] > 0.39 && pixels[0][0] < 0.41);
+    }
+
+    #[test]
+    fn saturation_factor_one_is_identity() {
+        let mut pixels = vec![[0.5_f64, 0.2, 0.1]];
+        let original = pixels.clone();
+        adjust_saturation(&mut pixels, 1.0);
+        for (got, expected) in pixels.iter().zip(original.iter()) {
+            for (a, b) in got.iter().zip(expected.iter()) {
+                assert!((a - b).abs() < 1e-9);
+            }
+        }
+    }
+
+    #[test]
+    fn saturation_factor_zero_produces_gray() {
+        let mut pixels = vec![[0.8_f64, 0.2, 0.1]];
+        adjust_saturation(&mut pixels, 0.0);
+        let [r, g, b] = pixels[0];
+        assert!(
+            (r - g).abs() < 1e-3 && (r - b).abs() < 1e-3,
+            "factor=0 must yield neutral gray: [{r}, {g}, {b}]"
+        );
+    }
+
+    #[test]
+    fn shadows_highlights_zero_is_identity() {
+        let mut pixels = vec![[0.2_f64, 0.2, 0.2], [0.7, 0.7, 0.7]];
+        let original = pixels.clone();
+        apply_shadows_highlights(&mut pixels, 0.0, 0.0);
+        assert_eq!(pixels, original);
+    }
+
+    #[test]
+    fn shadows_lifts_only_lower_half() {
+        let mut pixels = vec![[0.1_f64, 0.1, 0.1], [0.8, 0.8, 0.8]];
+        apply_shadows_highlights(&mut pixels, 0.5, 0.0);
+        // Shadow pixel lifted (brighter)
+        assert!(pixels[0][0] > 0.1, "shadow should be lifted: {}", pixels[0][0]);
+        // Highlight pixel unchanged (highlights=0)
+        assert!((pixels[1][0] - 0.8).abs() < 1e-6, "highlight should be unchanged: {}", pixels[1][0]);
     }
 
     #[test]

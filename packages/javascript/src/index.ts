@@ -1,4 +1,5 @@
 export { ditherImage } from './core';
+export type { DitherOptions } from './core';
 export { DitherMode } from './enums';
 export {
   ColorScheme,

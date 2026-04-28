@@ -97,7 +97,7 @@ class TestMeasuredPaletteIntegration:
         measured = ColorPalette(
             colors={"black": (2, 2, 2), "white": (179, 182, 171), "red": (117, 10, 0)}, accent="red"
         )
-        result = dither_image(small_test_image, measured, DitherMode.BURKES)
+        result = dither_image(small_test_image, measured, mode=DitherMode.BURKES)
 
         assert result.mode == "P"
         assert result.size == small_test_image.size
@@ -111,13 +111,13 @@ class TestMeasuredPaletteIntegration:
         """Test exported measured palette constants."""
         from epaper_dithering import HANSHOW_BWR, MONO_4_26, SPECTRA_7_3_6COLOR
 
-        result = dither_image(small_test_image, SPECTRA_7_3_6COLOR, DitherMode.BURKES)
+        result = dither_image(small_test_image, SPECTRA_7_3_6COLOR, mode=DitherMode.BURKES)
         assert result.mode == "P"
 
-        result = dither_image(small_test_image, MONO_4_26, DitherMode.FLOYD_STEINBERG)
+        result = dither_image(small_test_image, MONO_4_26, mode=DitherMode.FLOYD_STEINBERG)
         assert result.mode == "P"
 
-        result = dither_image(small_test_image, HANSHOW_BWR, DitherMode.SIERRA)
+        result = dither_image(small_test_image, HANSHOW_BWR, mode=DitherMode.SIERRA)
         assert result.mode == "P"
 
 
@@ -129,7 +129,7 @@ class TestPureColorMapping:
         """Each palette color should map to its own index with DitherMode.NONE."""
         for idx, (name, rgb) in enumerate(scheme.palette.colors.items()):
             img = Image.new("RGB", (4, 4), rgb)
-            result = dither_image(img, scheme, DitherMode.NONE)
+            result = dither_image(img, scheme, mode=DitherMode.NONE)
             pixels = list(result.get_flattened_data())
             assert all(p == idx for p in pixels), (
                 f"{scheme.name}: {name} {rgb} should map to index {idx}, got {set(pixels)}"

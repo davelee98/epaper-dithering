@@ -8,7 +8,7 @@
 use std::path::{Path, PathBuf};
 
 use epaper_dithering_core::{
-    dither,
+    dither, DitherConfig,
     enums::{DitherMode, GamutCompression, ToneCompression},
     measured_palettes::SPECTRA_7_3_6COLOR,
     palettes::ColorScheme,
@@ -56,7 +56,9 @@ fn assert_regression(
 ) {
     let (pixels, w, _h) = load_rgb(filename);
     let img = ImageBuffer::new(&pixels, w);
-    let output = dither(&img, palette, mode, true, tone, gamut);
+    let output = dither(&img, palette, DitherConfig {
+        mode, tone, gamut, ..Default::default()
+    });
 
     let stem = Path::new(filename).file_stem().unwrap().to_str().unwrap();
     let ref_path = reference_path(stem, tag);

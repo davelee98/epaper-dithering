@@ -69,6 +69,48 @@ impl PaletteLab {
     }
 }
 
+// M2_inv: OKLab -> LMS^(1/3) (Ottosson)
+const M2_INV: [[f64; 3]; 3] = [
+    [1.0,  0.3963377774,  0.2158037573],
+    [1.0, -0.1055613458, -0.0638541728],
+    [1.0, -0.0894841775, -1.2914855480],
+];
+
+// M1_inv: LMS -> XYZ (Ottosson)
+const M1_INV: [[f64; 3]; 3] = [
+    [ 1.2270138511035211, -0.5577999806518222,  0.2812561489664678],
+    [-0.0405801784232806,  1.1122568696168302, -0.0716766786656012],
+    [-0.0763812845057069, -0.4214819784180127,  1.5861632204407947],
+];
+
+// XYZ -> linear sRGB (IEC 61966-2-1 D65)
+const M_XYZ_RGB: [[f64; 3]; 3] = [
+    [ 3.2404542, -1.5371385, -0.4985314],
+    [-0.9692660,  1.8760108,  0.0415560],
+    [ 0.0556434, -0.2040259,  1.0572252],
+];
+
+/// OKLab → linear RGB. Output is clamped to [0, 1]. Inverse of `rgb_to_oklab`.
+pub fn oklab_to_rgb(lab: OkLab) -> [f64; 3] {
+    let l_ = M2_INV[0][0] * lab.l + M2_INV[0][1] * lab.a + M2_INV[0][2] * lab.b;
+    let m_ = M2_INV[1][0] * lab.l + M2_INV[1][1] * lab.a + M2_INV[1][2] * lab.b;
+    let s_ = M2_INV[2][0] * lab.l + M2_INV[2][1] * lab.a + M2_INV[2][2] * lab.b;
+
+    let l = l_ * l_ * l_;
+    let m = m_ * m_ * m_;
+    let s = s_ * s_ * s_;
+
+    let x = M1_INV[0][0] * l + M1_INV[0][1] * m + M1_INV[0][2] * s;
+    let y = M1_INV[1][0] * l + M1_INV[1][1] * m + M1_INV[1][2] * s;
+    let z = M1_INV[2][0] * l + M1_INV[2][1] * m + M1_INV[2][2] * s;
+
+    let r = M_XYZ_RGB[0][0] * x + M_XYZ_RGB[0][1] * y + M_XYZ_RGB[0][2] * z;
+    let g = M_XYZ_RGB[1][0] * x + M_XYZ_RGB[1][1] * y + M_XYZ_RGB[1][2] * z;
+    let b = M_XYZ_RGB[2][0] * x + M_XYZ_RGB[2][1] * y + M_XYZ_RGB[2][2] * z;
+
+    [r.clamp(0.0, 1.0), g.clamp(0.0, 1.0), b.clamp(0.0, 1.0)]
+}
+
 /// Returns the index of the closest palette color, using weighted Cartesian OKLab distance.
 ///
 /// `dist² = (1·dL)² + (wab·da)² + (wab·db)²`
