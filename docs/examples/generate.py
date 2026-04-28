@@ -12,7 +12,7 @@ def load(name: str) -> Image.Image:
 
 
 def dithered_rgb(img: Image.Image, palette, mode: DitherMode) -> Image.Image:
-    return dither_image(img, palette, mode).convert("RGB")
+    return dither_image(img, palette, mode=mode).convert("RGB")
 
 
 def label(img: Image.Image, text: str, size: int = 20) -> Image.Image:
@@ -45,9 +45,10 @@ def grid(cells: list[list[Image.Image]]) -> Image.Image:
 
 print("Generating frankfurt night before/after...")
 frankfurt_orig = Image.open(FIXTURES / "frankfurt_nacht.png").convert("RGB")
-frankfurt_no_pre = dither_image(frankfurt_orig, SPECTRA_7_3_6COLOR_V2, DitherMode.BURKES,
-                                tone_compression="auto", gamut_compression="auto").convert("RGB")
-frankfurt_auto   = dither_image(frankfurt_orig, SPECTRA_7_3_6COLOR_V2, DitherMode.BURKES).convert("RGB")
+frankfurt_no_pre = dither_image(frankfurt_orig, SPECTRA_7_3_6COLOR_V2,
+                                mode=DitherMode.BURKES, tone=0.0, gamut=0.0).convert("RGB")
+frankfurt_auto   = dither_image(frankfurt_orig, SPECTRA_7_3_6COLOR_V2,
+                                mode=DitherMode.BURKES).convert("RGB")
 
 p1 = label(frankfurt_orig,   "Original")
 p2 = label(frankfurt_no_pre, "Spectra 6-color · Burkes · no preprocessing")
