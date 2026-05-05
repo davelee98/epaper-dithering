@@ -138,6 +138,43 @@ pub fn error_diffusion_dither(
     kernel: &Kernel,
     serpentine: bool,
 ) -> Vec<u8> {
+    error_diffusion_dither_impl(pixels, width, height, palette, None, kernel, serpentine)
+}
+
+/// Error diffusion with exact canonical display-color pixels pinned.
+///
+/// Exact canonical pixels are already displayable, so they emit their firmware
+/// palette index directly and absorb any accumulated error instead of diffusing
+/// it into neighboring pixels.
+pub fn error_diffusion_dither_with_canonical(
+    pixels: &[u8],
+    width: usize,
+    height: usize,
+    palette: &Palette,
+    canonical_palette: &Palette,
+    kernel: &Kernel,
+    serpentine: bool,
+) -> Vec<u8> {
+    error_diffusion_dither_impl(
+        pixels,
+        width,
+        height,
+        palette,
+        Some(canonical_palette),
+        kernel,
+        serpentine,
+    )
+}
+
+fn error_diffusion_dither_impl(
+    pixels: &[u8],
+    width: usize,
+    height: usize,
+    palette: &Palette,
+    canonical_palette: Option<&Palette>,
+    kernel: &Kernel,
+    serpentine: bool,
+) -> Vec<u8> {
     let (_palette_linear, palette_lab) = build_palette_lab(palette);
 
     // Palette sRGB as f64 for error computation
@@ -162,6 +199,15 @@ pub fn error_diffusion_dither(
         for xi in 0..width {
             let x = if reverse { width - 1 - xi } else { xi };
             let idx = (y * width + x) * 3;
+
+            if let Some(canonical_palette) = canonical_palette {
+                if let Some(exact_idx) =
+                    exact_palette_index(&pixels[idx..idx + 3], canonical_palette)
+                {
+                    output[y * width + x] = exact_idx;
+                    continue;
+                }
+            }
 
             let rs = buf[idx].clamp(0.0, 255.0);
             let gs = buf[idx + 1].clamp(0.0, 255.0);
@@ -227,11 +273,30 @@ pub fn jarvis_judice_ninke(pixels: &[u8], w: usize, h: usize, palette: &Palette,
 // ── Direct palette map (no dithering) ────────────────────────────────────────
 
 /// Nearest-color mapping with no dithering. Each pixel maps independently.
-pub fn direct_map(pixels: &[u8], palette: &Palette) -> Vec<u8> {
+fn exact_palette_index(rgb: &[u8], palette: &Palette) -> Option<u8> {
+    palette
+        .colors
+        .iter()
+        .position(|&color| rgb == color)
+        .and_then(|idx| u8::try_from(idx).ok())
+}
+
+pub fn try_exact_palette_map(pixels: &[u8], canonical_palette: &Palette) -> Option<Vec<u8>> {
+    pixels
+        .par_chunks(3)
+        .map(|rgb| exact_palette_index(rgb, canonical_palette))
+        .collect()
+}
+
+pub fn direct_map(pixels: &[u8], palette: &Palette, canonical_palette: &Palette) -> Vec<u8> {
     let (_, palette_lab) = build_palette_lab(palette);
     pixels
         .par_chunks(3)
         .map(|rgb| {
+            if let Some(idx) = exact_palette_index(rgb, canonical_palette) {
+                return idx;
+            }
+
             let r = srgb_channel_to_linear(rgb[0]);
             let g = srgb_channel_to_linear(rgb[1]);
             let b = srgb_channel_to_linear(rgb[2]);
@@ -261,12 +326,36 @@ const BAYER_4X4: [[f64; 4]; 4] = [
 /// sRGB-space thresholding gives uniform perceptual dot density across the tonal range,
 /// matching how error diffusion already accumulates error. See GitHub issue #27.
 pub fn ordered_dither(pixels: &[u8], width: usize, palette: &Palette) -> Vec<u8> {
+    ordered_dither_impl(pixels, width, palette, None)
+}
+
+pub fn ordered_dither_with_canonical(
+    pixels: &[u8],
+    width: usize,
+    palette: &Palette,
+    canonical_palette: &Palette,
+) -> Vec<u8> {
+    ordered_dither_impl(pixels, width, palette, Some(canonical_palette))
+}
+
+fn ordered_dither_impl(
+    pixels: &[u8],
+    width: usize,
+    palette: &Palette,
+    canonical_palette: Option<&Palette>,
+) -> Vec<u8> {
     let (_palette_linear, palette_lab) = build_palette_lab(palette);
 
     pixels
         .par_chunks(3)
         .enumerate()
         .map(|(i, rgb)| {
+            if let Some(canonical_palette) = canonical_palette {
+                if let Some(idx) = exact_palette_index(rgb, canonical_palette) {
+                    return idx;
+                }
+            }
+
             let x = i % width;
             let y = i / width;
 
@@ -331,14 +420,14 @@ mod tests {
         assert_eq!(sierra_lite(&pixels, 10, 7, pal, false).len(), 70);
         assert_eq!(jarvis_judice_ninke(&pixels, 10, 7, pal, false).len(), 70);
         assert_eq!(ordered_dither(&pixels, 10, pal).len(), 70);
-        assert_eq!(direct_map(&pixels, pal).len(), 70);
+        assert_eq!(direct_map(&pixels, pal, pal).len(), 70);
     }
 
     #[test]
     fn direct_map_pure_red_maps_to_red_in_bwr() {
         // BWR palette: index 0=black, 1=white, 2=red — pure red should map to red ink
         let pixels = vec![255u8, 0, 0];
-        let out = direct_map(&pixels, ColorScheme::Bwr.palette());
+        let out = direct_map(&pixels, ColorScheme::Bwr.palette(), ColorScheme::Bwr.palette());
         assert_eq!(out[0], 2, "pure sRGB red should map to red ink (index 2) in BWR");
     }
 
@@ -346,7 +435,7 @@ mod tests {
     fn direct_map_pure_blue_maps_to_blue_in_bwgbry() {
         // BWGBRY palette order: 0=black, 1=white, 2=yellow, 3=red, 4=blue, 5=green
         let pixels = vec![0u8, 0, 255];
-        let out = direct_map(&pixels, ColorScheme::Bwgbry.palette());
+        let out = direct_map(&pixels, ColorScheme::Bwgbry.palette(), ColorScheme::Bwgbry.palette());
         assert_eq!(out[0], 4, "pure sRGB blue should map to blue ink (index 4) in BWGBRY");
     }
 

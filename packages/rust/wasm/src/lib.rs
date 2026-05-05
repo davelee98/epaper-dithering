@@ -1,5 +1,5 @@
 use epaper_dithering_core::{
-    dither, DitherConfig,
+    dither, dither_with_canonical, DitherConfig,
     enums::{DitherMode, GamutCompression, ToneCompression},
     measured_palettes::CATALOG,
     palettes::{ColorScheme, Palette},
@@ -70,7 +70,11 @@ pub fn dither_image(
         }
         let colors: Vec<[u8; 3]> = palette_bytes.chunks_exact(3).map(|c| [c[0], c[1], c[2]]).collect();
         let palette = Palette::new(colors, accent_idx);
-        Ok(dither(&img, palette, config))
+        if let Ok(scheme) = ColorScheme::try_from(scheme_id) {
+            Ok(dither_with_canonical(&img, &palette, scheme.palette(), config))
+        } else {
+            Ok(dither(&img, palette, config))
+        }
     }
 }
 
@@ -92,7 +96,7 @@ pub fn composite_rgba(rgba: &[u8]) -> Vec<u8> {
 
 /// Returns all measured palettes as a JSON string.
 ///
-/// Format: `[{"id": "SPECTRA_7_3_6COLOR", "colors": [[r,g,b], ...], "color_names": [...], "accent_idx": 3}, ...]`
+/// Format: `[{"id": "SPECTRA_7_3_6COLOR", "colors": [[r,g,b], ...], "color_names": [...], "accent_idx": 3, "scheme_id": 4}, ...]`
 #[wasm_bindgen]
 pub fn measured_palettes() -> String {
     let entries: Vec<String> = CATALOG
@@ -105,11 +109,12 @@ pub fn measured_palettes() -> String {
                 .map(|s| format!("\"{}\"", s))
                 .collect();
             format!(
-                "{{\"id\":\"{}\",\"colors\":[{}],\"color_names\":[{}],\"accent_idx\":{}}}",
+                "{{\"id\":\"{}\",\"colors\":[{}],\"color_names\":[{}],\"accent_idx\":{},\"scheme_id\":{}}}",
                 e.id,
                 colors.join(","),
                 names.join(","),
                 e.palette.accent_idx,
+                u8::from(e.scheme),
             )
         })
         .collect();

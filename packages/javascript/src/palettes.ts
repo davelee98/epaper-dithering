@@ -146,6 +146,7 @@ export function fromValue(value: number): ColorScheme {
 // Measured: 2026-02-03, iPhone 15 Pro Max RAW + Hue Play bars @ 6500K
 // Paper reference RGB(215,217,218); normalization: value × (255/paper_channel)
 export const SPECTRA_7_3_6COLOR: ColorPalette = {
+  scheme: ColorScheme.BWGBRY,
   colors: {
     black:  { r: 26,  g: 13,  b: 35  },
     white:  { r: 185, g: 202, b: 205 },
@@ -159,6 +160,7 @@ export const SPECTRA_7_3_6COLOR: ColorPalette = {
 
 // 4.26" Monochrome (MONO scheme)
 export const MONO_4_26: ColorPalette = {
+  scheme: ColorScheme.MONO,
   colors: {
     black: { r: 5,   g: 5,   b: 5   },
     white: { r: 220, g: 220, b: 220 },
@@ -168,6 +170,7 @@ export const MONO_4_26: ColorPalette = {
 
 // 4.2" BWRY (BWRY scheme)
 export const BWRY_4_2: ColorPalette = {
+  scheme: ColorScheme.BWRY,
   colors: {
     black:  { r: 5,   g: 5,   b: 5   },
     white:  { r: 200, g: 200, b: 200 },
@@ -179,6 +182,7 @@ export const BWRY_4_2: ColorPalette = {
 
 // Solum BWR (harvested display, BWR scheme)
 export const SOLUM_BWR: ColorPalette = {
+  scheme: ColorScheme.BWR,
   colors: {
     black: { r: 5,   g: 5,   b: 5   },
     white: { r: 200, g: 200, b: 200 },
@@ -189,6 +193,7 @@ export const SOLUM_BWR: ColorPalette = {
 
 // Hanshow BWR (harvested display, BWR scheme)
 export const HANSHOW_BWR: ColorPalette = {
+  scheme: ColorScheme.BWR,
   colors: {
     black: { r: 5,   g: 5,   b: 5   },
     white: { r: 200, g: 200, b: 200 },
@@ -199,6 +204,7 @@ export const HANSHOW_BWR: ColorPalette = {
 
 // Hanshow BWY (harvested display, BWY scheme)
 export const HANSHOW_BWY: ColorPalette = {
+  scheme: ColorScheme.BWY,
   colors: {
     black:  { r: 5,   g: 5,   b: 5   },
     white:  { r: 200, g: 200, b: 200 },
@@ -212,6 +218,7 @@ export const HANSHOW_BWY: ColorPalette = {
 // Measured: 2026-03-15, iPhone 15 Pro Max RAW + Affinity (v3), A4 paper white reference
 // Method: DNG with linear tone curve, WB from A4 paper, uniform ×2.4 scale
 export const SPECTRA_7_3_6COLOR_V2: ColorPalette = {
+  scheme: ColorScheme.BWGBRY,
   colors: {
     black:  { r: 31,  g: 24,  b: 41  },
     white:  { r: 168, g: 180, b: 182 },
@@ -226,6 +233,7 @@ export const SPECTRA_7_3_6COLOR_V2: ColorPalette = {
 // Measured: 2026-03-06, iPhone RAW
 // Paper reference RGB(205,205,205); normalization: value × (255/205)
 export const BWRY_3_97: ColorPalette = {
+  scheme: ColorScheme.BWRY,
   colors: {
     black:  { r: 10,  g: 7,   b: 14  },
     white:  { r: 173, g: 178, b: 174 },

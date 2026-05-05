@@ -65,8 +65,14 @@ Standard `ColorScheme` values use ideal sRGB colors (e.g. white = 255,255,255). 
 ```typescript
 import { ditherImage, SPECTRA_7_3_6COLOR, BWRY_3_97 } from '@opendisplay/epaper-dithering';
 
-// Automatically applies tone compression to fit the display's actual dynamic range
 const dithered = ditherImage(imageBuffer, SPECTRA_7_3_6COLOR, { mode: DitherMode.BURKES });
+
+// Opt in when you want automatic tone/gamut compression for photos
+const compressed = ditherImage(imageBuffer, SPECTRA_7_3_6COLOR, {
+  mode: DitherMode.BURKES,
+  tone: 'auto',
+  gamut: 'auto',
+});
 ```
 
 Available measured palettes: `SPECTRA_7_3_6COLOR_V2`, `SPECTRA_7_3_6COLOR`, `BWRY_3_97`, `MONO_4_26`, `BWRY_4_2`, `SOLUM_BWR`, `HANSHOW_BWR`, `HANSHOW_BWY`.
@@ -116,10 +122,14 @@ ditherImage(image: ImageBuffer, palette: ColorScheme | ColorPalette, options?: D
 | `saturation` | `number` | `1.0` | OKLab saturation multiplier. `0.0` = grayscale, `>1` = boost. Hue-preserving |
 | `shadows` | `number` | `0.0` | Shadow lift strength (S-curve lower half). `0.0` = off, `1.0` = strong |
 | `highlights` | `number` | `0.0` | Highlight compression strength (S-curve upper half). `0.0` = off, `1.0` = strong |
-| `tone` | `number \| 'auto' \| 'off'` | `'auto'` | Dynamic range compression. `'auto'` = histogram-based; numeric = fixed strength. Ignored for `ColorScheme` |
-| `gamut` | `number \| 'auto' \| 'off'` | `'auto'` | Pre-dither gamut compression. `'auto'` = activate when image exceeds palette gamut; numeric = fixed. Ignored for `ColorScheme` |
+| `tone` | `number \| 'auto' \| 'off'` | `0.0` | Dynamic range compression. `0.0`/`'off'` = disabled; `'auto'` = histogram-based; numeric = fixed strength. Ignored for `ColorScheme` |
+| `gamut` | `number \| 'auto' \| 'off'` | `0.0` | Pre-dither gamut compression. `0.0`/`'off'` = disabled; `'auto'` = activate when image exceeds palette gamut; numeric = fixed. Ignored for `ColorScheme` |
 
 Pre-processing pipeline: `exposure → saturation → shadows/highlights → tone → gamut → dither`. Each step is a no-op at its identity value.
+
+`DitherMode.NONE` performs direct nearest-color mapping without error diffusion or ordered dithering. Built-in measured palettes carry their canonical firmware `scheme`, so pure display colors map to the corresponding firmware palette index even when measured RGB values are used for matching.
+
+For built-in measured palettes, exact canonical display colors are also protected in ordered and error-diffusion modes when pre-processing is off: an image made entirely of display colors is returned as a direct palette-index map, and exact display-color pixels inside a mixed image keep their canonical index instead of being rematched to the measured RGB palette. Pre-processing runs before that exact-pixel check, so explicit `tone: 'auto'`, `gamut: 'auto'`, or other adjustments may intentionally alter those pixels first.
 
 Returns `PaletteImageBuffer`.
 
@@ -171,6 +181,7 @@ interface PaletteImageBuffer {
 interface ColorPalette {
   readonly colors: Record<string, RGB>;
   readonly accent: string;
+  readonly scheme?: number;
 }
 ```
 

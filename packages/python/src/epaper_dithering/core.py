@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from typing import cast
 
 from PIL import Image
 
@@ -27,8 +28,12 @@ def _to_rgb_bytes(image: Image.Image) -> tuple[bytes, int, int]:
 
 
 def _compression(v: float | str) -> float | None:
-    """Map Python compression param to Rust Option<f64>: 'auto' → None, float → Some."""
-    return None if v == "auto" else float(v)
+    """Map compression params: 'auto' -> Rust None, 'off' -> 0.0, float -> Some."""
+    if v == "auto":
+        return None
+    if v == "off":
+        return 0.0
+    return float(v)
 
 
 def dither_image(  # pylint: disable=too-many-arguments
@@ -41,8 +46,8 @@ def dither_image(  # pylint: disable=too-many-arguments
     saturation: float = 1.0,
     shadows: float = 0.0,
     highlights: float = 0.0,
-    tone: float | str = "auto",
-    gamut: float | str = "auto",
+    tone: float | str = 0.0,
+    gamut: float | str = 0.0,
 ) -> Image.Image:
     """Apply dithering to an image for e-paper display.
 
@@ -60,18 +65,18 @@ def dither_image(  # pylint: disable=too-many-arguments
             Hue-preserving.
         shadows: Shadow lift strength (S-curve lower half). 0.0 = off, 1.0 = strong.
         highlights: Highlight compression strength (S-curve upper half). 0.0 = off, 1.0 = strong.
-        tone: Dynamic-range compression. "auto" = histogram-based fit to display range,
-            0.0 = off, 0.0–1.0 = fixed strength. Only meaningful for measured palettes.
-        gamut: Gamut compression for out-of-gamut pixels. "auto" = full strength on
-            out-of-gamut pixels (smoothstep), 0.0 = off, 0.0–1.0 = fixed strength.
+        tone: Dynamic-range compression. 0.0 = off, "auto" = histogram-based fit
+            to display range, 0.0–1.0 = fixed strength. Only meaningful for measured palettes.
+        gamut: Gamut compression for out-of-gamut pixels. 0.0 = off, "auto" = full
+            strength on out-of-gamut pixels (smoothstep), 0.0–1.0 = fixed strength.
 
     Returns:
         Dithered palette-mode (`"P"`) PIL Image matching the color scheme.
     """
     if not isinstance(tone, (float, int, str)):
-        raise TypeError(f"tone must be float or 'auto', got {type(tone).__name__}")
+        raise TypeError(f"tone must be float, 'auto', or 'off', got {type(tone).__name__}")
     if not isinstance(gamut, (float, int, str)):
-        raise TypeError(f"gamut must be float or 'auto', got {type(gamut).__name__}")
+        raise TypeError(f"gamut must be float, 'auto', or 'off', got {type(gamut).__name__}")
 
     scheme_name = color_scheme.name if isinstance(color_scheme, ColorScheme) else "custom"
     _LOGGER.debug("Applying %s dithering for %s palette", mode.name, scheme_name)
@@ -105,10 +110,12 @@ def dither_image(  # pylint: disable=too-many-arguments
         palette_colors = list(color_scheme.colors.values())
         palette_bytes = bytes(c for rgb in palette_colors for c in rgb)
         accent_idx = list(color_scheme.colors.keys()).index(color_scheme.accent)
+        scheme_id = cast(int, color_scheme.scheme.value) if color_scheme.scheme is not None else None
         indices = _rs.dither_image(
             pixels,
             width,
             height,
+            scheme_id=scheme_id,
             palette_bytes=palette_bytes,
             accent_idx=accent_idx,
             **common_kwargs,  # type: ignore[arg-type]

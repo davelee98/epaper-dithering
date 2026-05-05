@@ -53,23 +53,147 @@ impl Default for DitherConfig {
             saturation: 1.0,
             shadows:    0.0,
             highlights: 0.0,
-            tone:       ToneCompression::Auto,
-            gamut:      GamutCompression::Auto,
+            tone:       ToneCompression::Fixed(0.0),
+            gamut:      GamutCompression::None,
         }
     }
 }
 
-fn dispatch(img: &ImageBuffer, p: &Palette, mode: DitherMode, serpentine: bool) -> Vec<u8> {
+fn dispatch(
+    img: &ImageBuffer,
+    p: &Palette,
+    canonical: &Palette,
+    mode: DitherMode,
+    serpentine: bool,
+    pin_exact_pixels: bool,
+) -> Vec<u8> {
     match mode {
-        DitherMode::None    => algorithms::direct_map(img.data, p),
+        DitherMode::None => algorithms::direct_map(img.data, p, canonical),
+        DitherMode::Ordered if pin_exact_pixels => {
+            algorithms::ordered_dither_with_canonical(img.data, img.width, p, canonical)
+        }
         DitherMode::Ordered => algorithms::ordered_dither(img.data, img.width, p),
-        DitherMode::FloydSteinberg    => algorithms::error_diffusion_dither(img.data, img.width, img.height, p, &algorithms::FLOYD_STEINBERG,      serpentine),
-        DitherMode::Burkes            => algorithms::error_diffusion_dither(img.data, img.width, img.height, p, &algorithms::BURKES,              serpentine),
-        DitherMode::Atkinson          => algorithms::error_diffusion_dither(img.data, img.width, img.height, p, &algorithms::ATKINSON,            serpentine),
-        DitherMode::Stucki            => algorithms::error_diffusion_dither(img.data, img.width, img.height, p, &algorithms::STUCKI,              serpentine),
-        DitherMode::Sierra            => algorithms::error_diffusion_dither(img.data, img.width, img.height, p, &algorithms::SIERRA,              serpentine),
-        DitherMode::SierraLite        => algorithms::error_diffusion_dither(img.data, img.width, img.height, p, &algorithms::SIERRA_LITE,         serpentine),
-        DitherMode::JarvisJudiceNinke => algorithms::error_diffusion_dither(img.data, img.width, img.height, p, &algorithms::JARVIS_JUDICE_NINKE, serpentine),
+        DitherMode::FloydSteinberg if pin_exact_pixels => algorithms::error_diffusion_dither_with_canonical(
+            img.data,
+            img.width,
+            img.height,
+            p,
+            canonical,
+            &algorithms::FLOYD_STEINBERG,
+            serpentine,
+        ),
+        DitherMode::Burkes if pin_exact_pixels => algorithms::error_diffusion_dither_with_canonical(
+            img.data,
+            img.width,
+            img.height,
+            p,
+            canonical,
+            &algorithms::BURKES,
+            serpentine,
+        ),
+        DitherMode::Atkinson if pin_exact_pixels => algorithms::error_diffusion_dither_with_canonical(
+            img.data,
+            img.width,
+            img.height,
+            p,
+            canonical,
+            &algorithms::ATKINSON,
+            serpentine,
+        ),
+        DitherMode::Stucki if pin_exact_pixels => algorithms::error_diffusion_dither_with_canonical(
+            img.data,
+            img.width,
+            img.height,
+            p,
+            canonical,
+            &algorithms::STUCKI,
+            serpentine,
+        ),
+        DitherMode::Sierra if pin_exact_pixels => algorithms::error_diffusion_dither_with_canonical(
+            img.data,
+            img.width,
+            img.height,
+            p,
+            canonical,
+            &algorithms::SIERRA,
+            serpentine,
+        ),
+        DitherMode::SierraLite if pin_exact_pixels => algorithms::error_diffusion_dither_with_canonical(
+            img.data,
+            img.width,
+            img.height,
+            p,
+            canonical,
+            &algorithms::SIERRA_LITE,
+            serpentine,
+        ),
+        DitherMode::JarvisJudiceNinke if pin_exact_pixels => {
+            algorithms::error_diffusion_dither_with_canonical(
+                img.data,
+                img.width,
+                img.height,
+                p,
+                canonical,
+                &algorithms::JARVIS_JUDICE_NINKE,
+                serpentine,
+            )
+        }
+        DitherMode::FloydSteinberg => algorithms::error_diffusion_dither(
+            img.data,
+            img.width,
+            img.height,
+            p,
+            &algorithms::FLOYD_STEINBERG,
+            serpentine,
+        ),
+        DitherMode::Burkes => algorithms::error_diffusion_dither(
+            img.data,
+            img.width,
+            img.height,
+            p,
+            &algorithms::BURKES,
+            serpentine,
+        ),
+        DitherMode::Atkinson => algorithms::error_diffusion_dither(
+            img.data,
+            img.width,
+            img.height,
+            p,
+            &algorithms::ATKINSON,
+            serpentine,
+        ),
+        DitherMode::Stucki => algorithms::error_diffusion_dither(
+            img.data,
+            img.width,
+            img.height,
+            p,
+            &algorithms::STUCKI,
+            serpentine,
+        ),
+        DitherMode::Sierra => algorithms::error_diffusion_dither(
+            img.data,
+            img.width,
+            img.height,
+            p,
+            &algorithms::SIERRA,
+            serpentine,
+        ),
+        DitherMode::SierraLite => algorithms::error_diffusion_dither(
+            img.data,
+            img.width,
+            img.height,
+            p,
+            &algorithms::SIERRA_LITE,
+            serpentine,
+        ),
+        DitherMode::JarvisJudiceNinke => algorithms::error_diffusion_dither(
+            img.data,
+            img.width,
+            img.height,
+            p,
+            &algorithms::JARVIS_JUDICE_NINKE,
+            serpentine,
+        ),
     }
 }
 
@@ -87,9 +211,39 @@ fn needs_preprocess(c: &DitherConfig) -> bool {
 /// Returns palette indices (one `u8` per pixel, length = `width × height`).
 pub fn dither(img: &ImageBuffer, palette: impl AsRef<Palette>, config: DitherConfig) -> Vec<u8> {
     let p = palette.as_ref();
+    dither_impl(img, p, p, config, false)
+}
 
+/// Dither an image using one palette for color matching and another for exact
+/// already-displayable RGB passthrough.
+///
+/// Measured palettes should be supplied as `matching_palette`; the ideal display
+/// color scheme should be supplied as `canonical_palette`.
+pub fn dither_with_canonical(
+    img: &ImageBuffer,
+    matching_palette: impl AsRef<Palette>,
+    canonical_palette: impl AsRef<Palette>,
+    config: DitherConfig,
+) -> Vec<u8> {
+    let p = matching_palette.as_ref();
+    let canonical = canonical_palette.as_ref();
+    dither_impl(img, p, canonical, config, true)
+}
+
+fn dither_impl(
+    img: &ImageBuffer,
+    p: &Palette,
+    canonical: &Palette,
+    config: DitherConfig,
+    pin_exact_pixels: bool,
+) -> Vec<u8> {
     if !needs_preprocess(&config) {
-        return dispatch(img, p, config.mode, config.serpentine);
+        if config.mode != DitherMode::None {
+            if let Some(indices) = algorithms::try_exact_palette_map(img.data, canonical) {
+                return indices;
+            }
+        }
+        return dispatch(img, p, canonical, config.mode, config.serpentine, pin_exact_pixels);
     }
 
     // Convert sRGB bytes → linear, apply pre-processing pipeline, convert back.
@@ -119,5 +273,119 @@ pub fn dither(img: &ImageBuffer, palette: impl AsRef<Palette>, config: DitherCon
         .collect();
 
     let processed_img = ImageBuffer::new(&processed, img.width);
-    dispatch(&processed_img, p, config.mode, config.serpentine)
+    dispatch(&processed_img, p, canonical, config.mode, config.serpentine, pin_exact_pixels)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::measured_palettes::SPECTRA_7_3_6COLOR;
+    use crate::palettes::ColorScheme;
+
+    fn pixels(rgb: [u8; 3], count: usize) -> Vec<u8> {
+        std::iter::repeat_n(rgb, count).flatten().collect()
+    }
+
+    #[test]
+    fn default_config_has_preprocessing_off() {
+        let config = DitherConfig::default();
+        assert!(matches!(config.tone, ToneCompression::Fixed(s) if s == 0.0));
+        assert_eq!(config.gamut, GamutCompression::None);
+        assert!(!needs_preprocess(&config));
+    }
+
+    #[test]
+    fn none_uses_canonical_exact_colors_with_measured_palette() {
+        let image = pixels([255, 0, 0], 4);
+        let img = ImageBuffer::new(&image, 2);
+        let output = dither_with_canonical(
+            &img,
+            &SPECTRA_7_3_6COLOR,
+            ColorScheme::Bwgbry.palette(),
+            DitherConfig { mode: DitherMode::None, ..Default::default() },
+        );
+        assert_eq!(output, vec![3, 3, 3, 3]);
+    }
+
+    #[test]
+    fn exact_canonical_colors_bypass_error_diffusion() {
+        let image = [
+            [0, 0, 0],
+            [255, 255, 255],
+            [255, 255, 0],
+            [255, 0, 0],
+        ]
+        .into_iter()
+        .flatten()
+        .collect::<Vec<_>>();
+        let img = ImageBuffer::new(&image, 2);
+        let output = dither_with_canonical(
+            &img,
+            &SPECTRA_7_3_6COLOR,
+            ColorScheme::Bwry.palette(),
+            DitherConfig { mode: DitherMode::Burkes, ..Default::default() },
+        );
+        assert_eq!(output, vec![0, 1, 2, 3]);
+    }
+
+    #[test]
+    fn exact_canonical_pixels_are_pinned_inside_mixed_error_diffusion_image() {
+        let mut image = pixels([128, 128, 128], 8);
+        image[0..3].copy_from_slice(&[0, 255, 0]);
+        image[9..12].copy_from_slice(&[0, 255, 0]);
+        let img = ImageBuffer::new(&image, 4);
+
+        for mode in [
+            DitherMode::Burkes,
+            DitherMode::FloydSteinberg,
+            DitherMode::Atkinson,
+            DitherMode::Stucki,
+            DitherMode::Sierra,
+            DitherMode::SierraLite,
+            DitherMode::JarvisJudiceNinke,
+        ] {
+            let output = dither_with_canonical(
+                &img,
+                &SPECTRA_7_3_6COLOR,
+                ColorScheme::Bwgbry.palette(),
+                DitherConfig { mode, ..Default::default() },
+            );
+            assert_eq!(output[0], 5, "{mode:?} should pin exact green at pixel 0");
+            assert_eq!(output[3], 5, "{mode:?} should pin exact green at pixel 3");
+        }
+    }
+
+    #[test]
+    fn exact_canonical_pixels_are_pinned_inside_mixed_ordered_image() {
+        let mut image = pixels([128, 128, 128], 8);
+        image[0..3].copy_from_slice(&[0, 255, 0]);
+        image[9..12].copy_from_slice(&[0, 255, 0]);
+        let img = ImageBuffer::new(&image, 4);
+
+        let output = dither_with_canonical(
+            &img,
+            &SPECTRA_7_3_6COLOR,
+            ColorScheme::Bwgbry.palette(),
+            DitherConfig { mode: DitherMode::Ordered, ..Default::default() },
+        );
+        assert_eq!(output[0], 5);
+        assert_eq!(output[3], 5);
+    }
+
+    #[test]
+    fn exact_bypass_is_skipped_when_preprocessing_is_enabled() {
+        let image = pixels([255, 0, 0], 4);
+        let img = ImageBuffer::new(&image, 2);
+        let output = dither_with_canonical(
+            &img,
+            &SPECTRA_7_3_6COLOR,
+            ColorScheme::Bwgbry.palette(),
+            DitherConfig {
+                mode: DitherMode::Burkes,
+                tone: ToneCompression::Fixed(1.0),
+                ..Default::default()
+            },
+        );
+        assert_eq!(output.len(), 4);
+    }
 }

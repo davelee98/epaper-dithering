@@ -40,9 +40,9 @@ export interface DitherOptions {
   shadows?: number;
   /** Highlight compression strength (S-curve upper half). 0.0 = off, 1.0 = strong. Default: `0.0`. */
   highlights?: number;
-  /** Dynamic-range compression: `'auto'` | `'off'` | 0.0–1.0. Default: `'auto'`. */
+  /** Dynamic-range compression: `0.0`/`'off'` disables, `'auto'` opts in. Default: `0.0`. */
   tone?: number | 'auto' | 'off';
-  /** Gamut compression: `'auto'` | `'off'` | 0.0–1.0. Default: `'auto'`. */
+  /** Gamut compression: `0.0`/`'off'` disables, `'auto'` opts in. Default: `0.0`. */
   gamut?: number | 'auto' | 'off';
 }
 
@@ -66,8 +66,8 @@ export function ditherImage(
     saturation = 1.0,
     shadows = 0.0,
     highlights = 0.0,
-    tone = 'auto',
-    gamut = 'auto',
+    tone = 0.0,
+    gamut = 0.0,
   } = options;
 
   const rgba = new Uint8Array(image.data.buffer, image.data.byteOffset, image.data.byteLength);
@@ -88,6 +88,7 @@ export function ditherImage(
     paletteBytes = new Uint8Array(0);
     outputColors = Object.values(getPalette(palette).colors);
   } else {
+    schemeId = palette.scheme ?? 255;
     const colors = Object.values(palette.colors);
     paletteBytes = new Uint8Array(colors.flatMap(c => [c.r, c.g, c.b]));
     accentIdx = Object.keys(palette.colors).indexOf(palette.accent);

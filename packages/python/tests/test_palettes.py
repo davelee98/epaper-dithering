@@ -120,6 +120,51 @@ class TestMeasuredPaletteIntegration:
         result = dither_image(small_test_image, HANSHOW_BWR, mode=DitherMode.SIERRA)
         assert result.mode == "P"
 
+    def test_predefined_measured_palettes_record_canonical_scheme(self):
+        """Measured palettes identify the pure display palette they produce."""
+        from epaper_dithering import BWRY_3_97, HANSHOW_BWR, SPECTRA_7_3_6COLOR
+
+        assert SPECTRA_7_3_6COLOR.scheme == ColorScheme.BWGBRY
+        assert BWRY_3_97.scheme == ColorScheme.BWRY
+        assert HANSHOW_BWR.scheme == ColorScheme.BWR
+
+    def test_none_uses_canonical_indices_for_measured_palette(self):
+        """DitherMode.NONE maps pure display colors directly for measured palettes."""
+        from epaper_dithering import SPECTRA_7_3_6COLOR
+
+        img = Image.new("RGB", (4, 4), ColorScheme.BWGBRY.palette.colors["red"])
+        result = dither_image(img, SPECTRA_7_3_6COLOR, mode=DitherMode.NONE)
+        pixels = list(result.get_flattened_data())
+
+        assert set(pixels) == {3}
+
+    @pytest.mark.parametrize("mode", [DitherMode.ORDERED, DitherMode.BURKES, DitherMode.FLOYD_STEINBERG])
+    def test_exact_display_colors_are_pinned_inside_mixed_measured_image(self, mode):
+        """Pure display-color pixels stay exact even when neighboring pixels need dithering."""
+        from epaper_dithering import SPECTRA_7_3_6COLOR
+
+        img = Image.new("RGB", (8, 4), (128, 128, 128))
+        for x in range(4):
+            for y in range(2):
+                img.putpixel((x, y), ColorScheme.BWGBRY.palette.colors["green"])
+
+        result = dither_image(img, SPECTRA_7_3_6COLOR, mode=mode)
+        pixels = list(result.get_flattened_data())
+        green_pixels = [pixels[y * 8 + x] for y in range(2) for x in range(4)]
+
+        assert set(green_pixels) == {5}
+
+    def test_predefined_measured_palette_outputs_measured_preview_palette(self):
+        """Indices stay canonical-compatible; the PIL preview palette stays measured."""
+        from epaper_dithering import SPECTRA_7_3_6COLOR
+
+        img = Image.new("RGB", (1, 1), ColorScheme.BWGBRY.palette.colors["red"])
+        result = dither_image(img, SPECTRA_7_3_6COLOR, mode=DitherMode.NONE)
+        palette = result.getpalette()
+
+        assert palette is not None
+        assert tuple(palette[3 * 3 : 3 * 3 + 3]) == SPECTRA_7_3_6COLOR.colors["red"]
+
 
 class TestPureColorMapping:
     """Test that pure palette colors map to themselves."""

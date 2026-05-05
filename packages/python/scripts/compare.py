@@ -82,7 +82,7 @@ def render(
     src: Image.Image, scheme: object, mode: DitherMode, tc: float | str, gc: float | str = 0.0
 ) -> tuple[Image.Image, float]:
     t0 = time.perf_counter()
-    dithered = dither_image(src, scheme, mode, tone_compression=tc, gamut_compression=gc)
+    dithered = dither_image(src, scheme, mode=mode, tone=tc, gamut=gc)
     return dithered.convert("RGB"), time.perf_counter() - t0
 
 

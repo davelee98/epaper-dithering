@@ -8,7 +8,7 @@
 
 use std::borrow::Cow;
 
-use crate::palettes::Palette;
+use crate::palettes::{ColorScheme, Palette};
 
 // ── Catalog (used by language bindings to expose named palettes) ──────────────
 
@@ -17,6 +17,7 @@ use crate::palettes::Palette;
 pub struct MeasuredPaletteEntry {
     pub id: &'static str,
     pub palette: &'static Palette,
+    pub scheme: ColorScheme,
     pub color_names: &'static [&'static str],
 }
 
@@ -25,41 +26,49 @@ pub static CATALOG: &[MeasuredPaletteEntry] = &[
     MeasuredPaletteEntry {
         id: "SPECTRA_7_3_6COLOR",
         palette: &SPECTRA_7_3_6COLOR,
+        scheme: ColorScheme::Bwgbry,
         color_names: &["black", "white", "yellow", "red", "blue", "green"],
     },
     MeasuredPaletteEntry {
         id: "SPECTRA_7_3_6COLOR_V2",
         palette: &SPECTRA_7_3_6COLOR_V2,
+        scheme: ColorScheme::Bwgbry,
         color_names: &["black", "white", "yellow", "red", "blue", "green"],
     },
     MeasuredPaletteEntry {
         id: "MONO_4_26",
         palette: &MONO_4_26,
+        scheme: ColorScheme::Mono,
         color_names: &["black", "white"],
     },
     MeasuredPaletteEntry {
         id: "BWRY_4_2",
         palette: &BWRY_4_2,
+        scheme: ColorScheme::Bwry,
         color_names: &["black", "white", "yellow", "red"],
     },
     MeasuredPaletteEntry {
         id: "BWRY_3_97",
         palette: &BWRY_3_97,
+        scheme: ColorScheme::Bwry,
         color_names: &["black", "white", "yellow", "red"],
     },
     MeasuredPaletteEntry {
         id: "SOLUM_BWR",
         palette: &SOLUM_BWR,
+        scheme: ColorScheme::Bwr,
         color_names: &["black", "white", "red"],
     },
     MeasuredPaletteEntry {
         id: "HANSHOW_BWR",
         palette: &HANSHOW_BWR,
+        scheme: ColorScheme::Bwr,
         color_names: &["black", "white", "red"],
     },
     MeasuredPaletteEntry {
         id: "HANSHOW_BWY",
         palette: &HANSHOW_BWY,
+        scheme: ColorScheme::Bwy,
         color_names: &["black", "white", "yellow"],
     },
 ];

@@ -223,14 +223,26 @@ class TestToneCompression:
 
     @pytest.mark.parametrize("mode", list(DitherMode))
     def test_auto_tone_compression_all_modes(self, mode):
-        """Auto tone compression (default) should produce valid output for all modes."""
+        """Auto tone compression should produce valid output for all modes."""
         from epaper_dithering import SPECTRA_7_3_6COLOR
 
         img = Image.new("RGB", (10, 10), (128, 128, 128))
-        result = dither_image(img, SPECTRA_7_3_6COLOR, mode=mode)
+        result = dither_image(img, SPECTRA_7_3_6COLOR, mode=mode, tone="auto", gamut="auto")
 
         assert result.mode == "P"
         assert result.size == (10, 10)
+
+    def test_default_tone_gamut_match_off_aliases(self):
+        """tone/gamut default to off, and 'off' is the string alias for 0.0."""
+        from epaper_dithering import SPECTRA_7_3_6COLOR
+
+        img = Image.new("RGB", (16, 16), (128, 128, 128))
+        result_default = dither_image(img, SPECTRA_7_3_6COLOR, mode=DitherMode.BURKES)
+        result_zero = dither_image(img, SPECTRA_7_3_6COLOR, mode=DitherMode.BURKES, tone=0.0, gamut=0.0)
+        result_off = dither_image(img, SPECTRA_7_3_6COLOR, mode=DitherMode.BURKES, tone="off", gamut="off")
+
+        assert np.array_equal(np.array(result_default), np.array(result_zero))
+        assert np.array_equal(np.array(result_default), np.array(result_off))
 
     def test_tone_compression_changes_measured_output(self):
         """Tone compression should change the output for measured palettes."""
