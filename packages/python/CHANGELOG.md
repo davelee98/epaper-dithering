@@ -1,5 +1,12 @@
 # Changelog
 
+## [4.1.0](https://github.com/OpenDisplay/epaper-dithering/compare/epaper-dithering-v4.0.0...epaper-dithering-v4.1.0) (2026-05-05)
+
+
+### Features
+
+* preserve exact display colors for measured palettes ([2108514](https://github.com/OpenDisplay/epaper-dithering/commit/21085148ed11851790c7349e33566a892e46a7d7))
+
 ## [4.0.0](https://github.com/OpenDisplay/epaper-dithering/compare/epaper-dithering-v3.0.0...epaper-dithering-v4.0.0) (2026-04-28)
 
 
