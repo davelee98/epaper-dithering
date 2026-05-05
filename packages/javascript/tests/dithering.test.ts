@@ -120,6 +120,71 @@ describe('Dithering Algorithms', () => {
       expect(result.indices[i]).toBeLessThan(6);
     }
   });
+
+  it('defaults tone/gamut to off and accepts the off alias', () => {
+    const image = createTestImage(16, 16, { r: 128, g: 128, b: 128 });
+    const resultDefault = ditherImage(image, SPECTRA_7_3_6COLOR, { mode: DitherMode.BURKES });
+    const resultZero = ditherImage(image, SPECTRA_7_3_6COLOR, {
+      mode: DitherMode.BURKES,
+      tone: 0.0,
+      gamut: 0.0,
+    });
+    const resultOff = ditherImage(image, SPECTRA_7_3_6COLOR, {
+      mode: DitherMode.BURKES,
+      tone: 'off',
+      gamut: 'off',
+    });
+
+    expect(resultDefault.indices).toEqual(resultZero.indices);
+    expect(resultDefault.indices).toEqual(resultOff.indices);
+  });
+
+  it('measured palettes record their canonical firmware scheme', () => {
+    expect(SPECTRA_7_3_6COLOR.scheme).toBe(ColorScheme.BWGBRY);
+  });
+
+  it('DitherMode.NONE maps pure display colors directly for measured palettes', () => {
+    const red = getPalette(ColorScheme.BWGBRY).colors.red;
+    const image = createTestImage(4, 4, red);
+    const result = ditherImage(image, SPECTRA_7_3_6COLOR, { mode: DitherMode.NONE });
+
+    expect(new Set(result.indices)).toEqual(new Set([3]));
+  });
+
+  it.each([DitherMode.ORDERED, DitherMode.BURKES, DitherMode.FLOYD_STEINBERG])(
+    'pins exact display colors inside mixed measured images for mode %s',
+    (mode) => {
+      const green = getPalette(ColorScheme.BWGBRY).colors.green;
+      const image = createTestImage(8, 4, { r: 128, g: 128, b: 128 });
+      for (let y = 0; y < 2; y++) {
+        for (let x = 0; x < 4; x++) {
+          const idx = (y * image.width + x) * 4;
+          image.data[idx] = green.r;
+          image.data[idx + 1] = green.g;
+          image.data[idx + 2] = green.b;
+          image.data[idx + 3] = 255;
+        }
+      }
+
+      const result = ditherImage(image, SPECTRA_7_3_6COLOR, { mode });
+      const pinned = [];
+      for (let y = 0; y < 2; y++) {
+        for (let x = 0; x < 4; x++) {
+          pinned.push(result.indices[y * image.width + x]);
+        }
+      }
+
+      expect(new Set(pinned)).toEqual(new Set([5]));
+    }
+  );
+
+  it('predefined measured palettes return measured preview colors', () => {
+    const red = getPalette(ColorScheme.BWGBRY).colors.red;
+    const image = createTestImage(1, 1, red);
+    const result = ditherImage(image, SPECTRA_7_3_6COLOR, { mode: DitherMode.NONE });
+
+    expect(result.palette[3]).toEqual(SPECTRA_7_3_6COLOR.colors.red);
+  });
 });
 
 describe('ColorScheme', () => {

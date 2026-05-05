@@ -12,6 +12,7 @@ class ColorPalette:
 
     colors: dict[str, tuple[int, int, int]]  # name -> RGB tuple
     accent: str  # Primary accent color name
+    scheme: ColorScheme | None = None  # Canonical firmware color scheme, if known
 
 
 class ColorScheme(Enum):
@@ -199,12 +200,16 @@ def _load_measured_palettes() -> dict[str, "ColorPalette"]:
     from . import _rs  # noqa: PLC0415  (local import avoids circular dependency at module level)
 
     result: dict[str, ColorPalette] = {}
-    for name, rgb_bytes, color_names, accent_idx in _rs.measured_palettes():
+    for name, rgb_bytes, color_names, accent_idx, scheme_id in _rs.measured_palettes():
         colors = {
             color_names[i]: (rgb_bytes[i * 3], rgb_bytes[i * 3 + 1], rgb_bytes[i * 3 + 2])
             for i in range(len(color_names))
         }
-        result[name] = ColorPalette(colors=colors, accent=color_names[accent_idx])
+        result[name] = ColorPalette(
+            colors=colors,
+            accent=color_names[accent_idx],
+            scheme=ColorScheme.from_value(scheme_id),
+        )
     return result
 
 

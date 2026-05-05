@@ -5,8 +5,8 @@ Usage:
     uv run scripts/pipeline.py [options] [image1.jpg image2.jpg ...]
 
 Options:
-    --tc auto|0|0.5|1.0     Tone compression  (default: auto)
-    --gc auto|0|0.5|1.0     Gamut compression (default: auto)
+    --tc auto|0|0.5|1.0     Tone compression  (default: 0)
+    --gc auto|0|0.5|1.0     Gamut compression (default: 0)
     --palette SPECTRA_V2|SPECTRA_V1|BWRY_3_97|...  (default: SPECTRA_V2)
     --mode BURKES|FLOYD_STEINBERG|ATKINSON|...      (default: BURKES)
 
@@ -239,13 +239,13 @@ def run(
     )
 
     # ── Step 5: Direct palette map ────────────────────────────────────────────
-    direct = _lib.dither_image(src, palette, DitherMode.NONE, tone_compression=tc, gamut_compression=gc)
+    direct = _lib.dither_image(src, palette, mode=DitherMode.NONE, tone=tc, gamut=gc)
     panel5 = add_label(
         direct.convert("RGB"), f"5. Direct palette map (no error diffusion)  tc={fmt(tc)}  gc={fmt(gc)}", font
     )
 
     # ── Step 6: Final output ──────────────────────────────────────────────────
-    final = _lib.dither_image(src, palette, mode, tone_compression=tc, gamut_compression=gc)
+    final = _lib.dither_image(src, palette, mode=mode, tone=tc, gamut=gc)
     panel6 = add_label(final.convert("RGB"), f"6. Final: {mode.name}  tc={fmt(tc)}  gc={fmt(gc)}", font)
 
     # ── Assemble vertical strip ───────────────────────────────────────────────
@@ -264,8 +264,8 @@ def run(
 def main() -> None:
     parser = argparse.ArgumentParser(description="Pipeline visualization for epaper dithering.")
     parser.add_argument("images", nargs="*", help="Image paths (default: marienplatz.jpg)")
-    parser.add_argument("--tc", default="auto", help="Tone compression: auto|0|0.5|1.0 (default: auto)")
-    parser.add_argument("--gc", default="auto", help="Gamut compression: auto|0|0.5|1.0 (default: auto)")
+    parser.add_argument("--tc", default="0", help="Tone compression: auto|0|0.5|1.0 (default: 0)")
+    parser.add_argument("--gc", default="0", help="Gamut compression: auto|0|0.5|1.0 (default: 0)")
     parser.add_argument("--palette", default="SPECTRA_V2", choices=list(PALETTES), help="Palette (default: SPECTRA_V2)")
     parser.add_argument("--mode", default="BURKES", choices=list(MODES), help="Dither mode (default: BURKES)")
     args = parser.parse_args()

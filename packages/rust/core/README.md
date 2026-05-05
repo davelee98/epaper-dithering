@@ -46,16 +46,20 @@ let indices = dither(&img, &SPECTRA_7_3_6COLOR, DitherConfig {
     mode: DitherMode::Stucki,
     saturation: 1.3,           // boost saturation
     shadows: 0.4,              // lift shadows
-    tone:  ToneCompression::Auto,
+    tone:  ToneCompression::Auto, // opt in for photos
     gamut: GamutCompression::Auto,
     ..Default::default()
 });
 ```
 
 `DitherConfig` defaults: `Burkes`, `serpentine: true`, `exposure: 1.0`, `saturation: 1.0`,
-`shadows: 0.0`, `highlights: 0.0`, `tone: Auto`, `gamut: Auto`.
+`shadows: 0.0`, `highlights: 0.0`, `tone: Fixed(0.0)`, `gamut: None`.
 
 Pipeline order: `exposure → saturation → shadows/highlights → tone → gamut → dither`.
+
+`DitherMode::None` performs direct nearest-color mapping without error diffusion or ordered dithering. `dither_with_canonical` lets measured palettes use calibrated RGB values for matching while preserving the canonical display palette for exact-color bypass and firmware indices.
+
+With `dither_with_canonical`, exact canonical display colors are also protected in ordered and error-diffusion modes when pre-processing is off: an image made entirely of display colors is returned as a direct palette-index map, and exact display-color pixels inside a mixed image keep their canonical index instead of being rematched to the measured RGB palette. Pre-processing runs before that exact-pixel check, so explicit tone/gamut compression or other adjustments may intentionally alter those pixels first.
 
 ## Related packages
 

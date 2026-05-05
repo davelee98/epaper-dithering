@@ -114,7 +114,7 @@ fn bench_direct_map(c: &mut Criterion) {
         let pixels = synthetic_image(w, h);
         group.throughput(Throughput::Elements((w * h) as u64));
         group.bench_with_input(BenchmarkId::from_parameter(format!("{w}x{h}")), &(), |b, _| {
-            b.iter(|| direct_map(&pixels, palette))
+            b.iter(|| direct_map(&pixels, palette, palette))
         });
     }
 
@@ -244,7 +244,7 @@ fn bench_real_images(c: &mut Criterion) {
     group.throughput(Throughput::Elements((800 * 480) as u64));
 
     for (filename, label) in FIXTURES {
-        let (pixels, w, h) = load_fixture(filename);
+        let (pixels, w, _h) = load_fixture(filename);
         let img = ImageBuffer::new(&pixels, w);
 
         group.bench_with_input(
@@ -255,10 +255,12 @@ fn bench_real_images(c: &mut Criterion) {
                     dither(
                         &img,
                         &SPECTRA_7_3_6COLOR,
-                        DitherMode::Burkes,
-                        true,
-                        ToneCompression::Auto,
-                        GamutCompression::Auto,
+                        DitherConfig {
+                            mode: DitherMode::Burkes,
+                            tone: ToneCompression::Auto,
+                            gamut: GamutCompression::Auto,
+                            ..Default::default()
+                        },
                     )
                 })
             },

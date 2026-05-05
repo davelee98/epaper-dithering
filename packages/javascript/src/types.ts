@@ -33,4 +33,6 @@ export interface PaletteImageBuffer {
 export interface ColorPalette {
   readonly colors: Record<string, RGB>;
   readonly accent: string;
+  /** Canonical firmware color scheme value, if this is a measured palette. */
+  readonly scheme?: number;
 }

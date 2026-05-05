@@ -1,5 +1,5 @@
 use epaper_dithering_core::{
-    dither, DitherConfig,
+    dither, dither_with_canonical, DitherConfig,
     enums::{DitherMode, GamutCompression, ToneCompression},
     measured_palettes::CATALOG,
     palettes::{ColorScheme, Palette},
@@ -37,7 +37,7 @@ fn parse_gamut(v: Option<f64>) -> GamutCompression {
     scheme_id=None, palette_bytes=None, accent_idx=0,
     mode_id=1, serpentine=true,
     exposure=1.0, saturation=1.0, shadows=0.0, highlights=0.0,
-    tone=None, gamut=None,
+    tone=0.0, gamut=0.0,
 ))]
 #[allow(clippy::too_many_arguments)]
 fn dither_image(
@@ -70,13 +70,19 @@ fn dither_image(
     };
 
     match (palette_bytes, scheme_id) {
-        (Some(bytes), _) => {
+        (Some(bytes), scheme_id) => {
             if !bytes.len().is_multiple_of(3) {
                 return Err(PyValueError::new_err("palette_bytes length must be a multiple of 3"));
             }
             let colors: Vec<[u8; 3]> = bytes.chunks_exact(3).map(|c| [c[0], c[1], c[2]]).collect();
             let palette = Palette::new(colors, accent_idx);
-            Ok(dither(&img, palette, config))
+            if let Some(id) = scheme_id {
+                let scheme = ColorScheme::try_from(id)
+                    .map_err(|e| PyValueError::new_err(e.to_string()))?;
+                Ok(dither_with_canonical(&img, &palette, scheme.palette(), config))
+            } else {
+                Ok(dither(&img, palette, config))
+            }
         }
         (None, Some(id)) => {
             let scheme = ColorScheme::try_from(id)
@@ -89,9 +95,9 @@ fn dither_image(
 
 /// Returns all measured palettes from the Rust catalog.
 ///
-/// Each entry is `(id, rgb_bytes, color_names, accent_idx)`.
+/// Each entry is `(id, rgb_bytes, color_names, accent_idx, scheme_id)`.
 #[pyfunction]
-fn measured_palettes() -> Vec<(String, Vec<u8>, Vec<String>, usize)> {
+fn measured_palettes() -> Vec<(String, Vec<u8>, Vec<String>, usize, u8)> {
     CATALOG
         .iter()
         .map(|e| {
@@ -100,6 +106,7 @@ fn measured_palettes() -> Vec<(String, Vec<u8>, Vec<String>, usize)> {
                 e.palette.colors.iter().flatten().copied().collect(),
                 e.color_names.iter().map(|&s| s.to_string()).collect(),
                 e.palette.accent_idx,
+                u8::from(e.scheme),
             )
         })
         .collect()

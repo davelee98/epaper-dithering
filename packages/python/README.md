@@ -138,22 +138,26 @@ Note: The `serpentine` parameter only affects error diffusion algorithms (Floyd-
 
 E-paper displays can't reproduce the full luminance range of digital images. Pure white on a display is much darker than (255, 255, 255), and pure black is lighter than (0, 0, 0). Without tone compression, dithering tries to represent unreachable brightness levels, causing large accumulated errors and noisy output.
 
-Tone compression remaps image luminance to the display's actual range before dithering. Based on [`fast_compress_dynamic_range()`](https://github.com/aitjcize/esp32-photoframe) from esp32-photoframe by aitjcize. It is enabled by default (`tone="auto"`) and only applies when using measured `ColorPalette` instances:
+Tone compression remaps image luminance to the display's actual range before dithering. Based on [`fast_compress_dynamic_range()`](https://github.com/aitjcize/esp32-photoframe) from esp32-photoframe by aitjcize. It is off by default (`tone=0.0`) and only applies when using measured `ColorPalette` instances:
 
-- **`"auto"`** (default): Analyzes the image histogram and remaps its actual luminance range to the display range. Maximizes contrast by stretching only the used range.
-- **`0.0-1.0`**: Fixed linear compression strength. `1.0` maps the full [0,1] range to the display range. `0.0` disables compression.
+- **`0.0` / `"off"`** (default): Disable tone compression.
+- **`"auto"`**: Analyze the image histogram and remap its actual luminance range to the display range. Maximizes contrast by stretching only the used range.
+- **`0.0-1.0`**: Fixed linear compression strength. `1.0` maps the full [0,1] range to the display range.
 
 ```python
 from epaper_dithering import dither_image, SPECTRA_7_3_6COLOR, DitherMode
 
-# Default: auto tone compression (recommended)
+# Default: tone compression off
 result = dither_image(img, SPECTRA_7_3_6COLOR, mode=DitherMode.FLOYD_STEINBERG)
+
+# Auto tone compression
+result = dither_image(img, SPECTRA_7_3_6COLOR, mode=DitherMode.FLOYD_STEINBERG, tone="auto")
 
 # Fixed linear compression
 result = dither_image(img, SPECTRA_7_3_6COLOR, mode=DitherMode.FLOYD_STEINBERG, tone=1.0)
 
-# Disable tone compression
-result = dither_image(img, SPECTRA_7_3_6COLOR, mode=DitherMode.FLOYD_STEINBERG, tone=0.0)
+# Disable tone compression explicitly
+result = dither_image(img, SPECTRA_7_3_6COLOR, mode=DitherMode.FLOYD_STEINBERG, tone="off")
 ```
 
 Note: `tone` has no effect when using theoretical `ColorScheme` palettes (e.g., `ColorScheme.BWR`), since their black/white values already span the full range.
@@ -163,17 +167,24 @@ Note: `tone` has no effect when using theoretical `ColorScheme` palettes (e.g., 
 Some images contain highly saturated colors that a limited palette simply cannot reproduce (e.g. vivid purple on a BWGBRY display). Without gamut compression, the ditherer tries to mix palette colors to approximate the hue — often producing muddy results. Gamut compression pre-blends out-of-gamut pixels toward the nearest palette color before dithering, giving error diffusion a better starting point.
 
 ```python
-# Default: auto gamut compression (activates only when image exceeds palette gamut)
+# Default: gamut compression off
 result = dither_image(img, SPECTRA_7_3_6COLOR, mode=DitherMode.BURKES)
+
+# Auto gamut compression
+result = dither_image(img, SPECTRA_7_3_6COLOR, mode=DitherMode.BURKES, gamut="auto")
 
 # Fixed strength (0.7–0.9 recommended for very saturated images)
 result = dither_image(img, SPECTRA_7_3_6COLOR, mode=DitherMode.BURKES, gamut=0.8)
 
 # Disable
-result = dither_image(img, SPECTRA_7_3_6COLOR, mode=DitherMode.BURKES, gamut=0.0)
+result = dither_image(img, SPECTRA_7_3_6COLOR, mode=DitherMode.BURKES, gamut="off")
 ```
 
 Note: `gamut` also has no effect for theoretical `ColorScheme` palettes.
+
+`DitherMode.NONE` performs direct nearest-color mapping without error diffusion or ordered dithering. For built-in measured palettes, pure canonical display colors such as `(255, 0, 0)` map directly to the corresponding firmware palette index even though matching uses measured display RGB values.
+
+For built-in measured palettes, exact canonical display colors are also protected in ordered and error-diffusion modes when pre-processing is off: an image made entirely of display colors is returned as a direct palette-index map, and exact display-color pixels inside a mixed image keep their canonical index instead of being rematched to the measured RGB palette. Pre-processing runs before that exact-pixel check, so explicit `tone="auto"`/`gamut="auto"` or other adjustments may intentionally alter those pixels first.
 
 #### Per-Image Tonal Adjustments
 
@@ -262,6 +273,8 @@ my_display = ColorPalette(
 # Use it directly
 result = dither_image(img, my_display, mode=DitherMode.FLOYD_STEINBERG)
 ```
+
+Built-in measured palettes store the canonical firmware `ColorScheme` they are based on. Custom measured palettes may omit it; in that case direct mapping and exact-color bypass use the custom measured RGB values.
 
 ### Measurement Quick Start
 

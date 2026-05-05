@@ -39,8 +39,11 @@ img = Image.open("photo.jpg")
 # Idealized palette
 dithered = dither_image(img, ColorScheme.BWR, mode=DitherMode.FLOYD_STEINBERG)
 
-# Measured palette — auto tone + gamut compression
+# Measured palette — calibrated color matching
 dithered = dither_image(img, SPECTRA_7_3_6COLOR_V2)
+
+# Opt in to automatic tone + gamut compression for photos
+dithered = dither_image(img, SPECTRA_7_3_6COLOR_V2, tone="auto", gamut="auto")
 ```
 
 See [`packages/python/README.md`](packages/python/README.md) for full documentation.
@@ -59,8 +62,11 @@ import { ditherImage, ColorScheme, DitherMode, SPECTRA_7_3_6COLOR_V2 } from '@op
 // ImageBuffer from Canvas API or Node.js (sharp, etc.)
 const dithered = ditherImage(imageBuffer, ColorScheme.BWR, { mode: DitherMode.BURKES });
 
-// Measured palette — auto tone + gamut compression
+// Measured palette — calibrated color matching
 const dithered = ditherImage(imageBuffer, SPECTRA_7_3_6COLOR_V2);
+
+// Opt in to automatic tone + gamut compression for photos
+const compressed = ditherImage(imageBuffer, SPECTRA_7_3_6COLOR_V2, { tone: 'auto', gamut: 'auto' });
 ```
 
 See [`packages/javascript/README.md`](packages/javascript/README.md) for full documentation.
@@ -70,7 +76,7 @@ See [`packages/javascript/README.md`](packages/javascript/README.md) for full do
 - **Rust Core**: All dithering logic in `packages/rust/core/` — shared by both packages
 - **9 Dithering Algorithms**: NONE, ORDERED, BURKES, FLOYD_STEINBERG, ATKINSON, STUCKI, SIERRA, SIERRA_LITE, JARVIS_JUDICE_NINKE
 - **8 Color Schemes**: MONO, BWR, BWY, BWRY, BWGBRY (Spectra 6), GRAYSCALE_4, GRAYSCALE_8, GRAYSCALE_16
-- **Measured Palettes**: Calibrated RGB values for real displays with tone + gamut compression
+- **Measured Palettes**: Calibrated RGB values for real displays, linked to their canonical firmware palette
 - **OKLab Color Matching**: Weighted Cartesian OKLab — preserves hue without the achromatic-attractor bug of LCH-weighted approaches
 - **Pre-dither Knobs**: Per-image exposure, saturation, shadows, highlights, and gamut compression — all orthogonal
 

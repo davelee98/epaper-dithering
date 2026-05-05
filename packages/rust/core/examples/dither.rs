@@ -1,18 +1,18 @@
-/// Quick visual test: dither a real image and save the result.
-///
-/// Usage:
-///   cargo run --example dither <input> [output] [scheme] [mode] [tone] [gamut]
-///
-/// Examples:
-///   cargo run --example dither photo.jpg
-///   cargo run --example dither photo.jpg out.png spectra stucki auto none
-///   cargo run --example dither photo.jpg out.png spectra stucki 0.8 0.5
-///
-/// Schemes: mono, bwr, bwy, bwry, bwgbry, grayscale4, grayscale8, grayscale16
-///          spectra, spectra_v2, mono_4_26, bwry_4_2, bwry_3_97, solum_bwr, hanshow_bwr, hanshow_bwy
-/// Modes:   none, ordered, floyd_steinberg, burkes, atkinson, stucki, sierra, sierra_lite, jjn
-/// Tone:    auto, none, 0.0–1.0  (default: auto)
-/// Gamut:   none, auto, 0.0–1.0  (default: none)
+// Quick visual test: dither a real image and save the result.
+//
+// Usage:
+//   cargo run --example dither <input> [output] [scheme] [mode] [tone] [gamut]
+//
+// Examples:
+//   cargo run --example dither photo.jpg
+//   cargo run --example dither photo.jpg out.png spectra stucki auto none
+//   cargo run --example dither photo.jpg out.png spectra stucki 0.8 0.5
+//
+// Schemes: mono, bwr, bwy, bwry, bwgbry, grayscale4, grayscale8, grayscale16
+//          spectra, spectra_v2, mono_4_26, bwry_4_2, bwry_3_97, solum_bwr, hanshow_bwr, hanshow_bwy
+// Modes:   none, ordered, floyd_steinberg, burkes, atkinson, stucki, sierra, sierra_lite, jjn
+// Tone:    auto, none, 0.0-1.0  (default: none)
+// Gamut:   none, auto, 0.0-1.0  (default: none)
 
 use epaper_dithering_core::enums::{DitherMode, GamutCompression, ToneCompression};
 use epaper_dithering_core::measured_palettes::{
@@ -36,7 +36,7 @@ fn main() {
     let output_path = args.get(2).map(String::as_str).unwrap_or("dithered.png");
     let scheme_name = args.get(3).map(String::as_str).unwrap_or("bwr");
     let mode_name   = args.get(4).map(String::as_str).unwrap_or("burkes");
-    let tone_name   = args.get(5).map(String::as_str).unwrap_or("auto");
+    let tone_name   = args.get(5).map(String::as_str).unwrap_or("none");
     let gamut_name  = args.get(6).map(String::as_str).unwrap_or("none");
 
     let palette: &Palette = match scheme_name {
