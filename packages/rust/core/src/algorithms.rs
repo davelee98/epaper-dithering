@@ -200,13 +200,12 @@ fn error_diffusion_dither_impl(
             let x = if reverse { width - 1 - xi } else { xi };
             let idx = (y * width + x) * 3;
 
-            if let Some(canonical_palette) = canonical_palette {
-                if let Some(exact_idx) =
+            if let Some(canonical_palette) = canonical_palette
+                && let Some(exact_idx) =
                     exact_palette_index(&pixels[idx..idx + 3], canonical_palette)
-                {
-                    output[y * width + x] = exact_idx;
-                    continue;
-                }
+            {
+                output[y * width + x] = exact_idx;
+                continue;
             }
 
             let rs = buf[idx].clamp(0.0, 255.0);
@@ -350,10 +349,10 @@ fn ordered_dither_impl(
         .par_chunks(3)
         .enumerate()
         .map(|(i, rgb)| {
-            if let Some(canonical_palette) = canonical_palette {
-                if let Some(idx) = exact_palette_index(rgb, canonical_palette) {
-                    return idx;
-                }
+            if let Some(canonical_palette) = canonical_palette
+                && let Some(idx) = exact_palette_index(rgb, canonical_palette)
+            {
+                return idx;
             }
 
             let x = i % width;

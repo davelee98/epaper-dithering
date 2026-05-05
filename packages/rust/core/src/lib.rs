@@ -238,10 +238,10 @@ fn dither_impl(
     pin_exact_pixels: bool,
 ) -> Vec<u8> {
     if !needs_preprocess(&config) {
-        if config.mode != DitherMode::None {
-            if let Some(indices) = algorithms::try_exact_palette_map(img.data, canonical) {
-                return indices;
-            }
+        if config.mode != DitherMode::None
+            && let Some(indices) = algorithms::try_exact_palette_map(img.data, canonical)
+        {
+            return indices;
         }
         return dispatch(img, p, canonical, config.mode, config.serpentine, pin_exact_pixels);
     }
