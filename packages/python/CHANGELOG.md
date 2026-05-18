@@ -1,5 +1,16 @@
 # Changelog
 
+## [5.0.0](https://github.com/OpenDisplay/epaper-dithering/compare/epaper-dithering-v4.1.0...epaper-dithering-v5.0.0) (2026-05-18)
+
+
+### ⚠ BREAKING CHANGES
+
+* ColorScheme.GRAYSCALE_8 is now value 7 and ColorScheme.GRAYSCALE_16 is now value 6. Code that hardcoded these integer values needs to be updated.
+
+### Bug Fixes
+
+* correct GRAYSCALE_16=6 and GRAYSCALE_8=7 to match firmware ([a991067](https://github.com/OpenDisplay/epaper-dithering/commit/a991067820529081afb25ff5ab786c58c1c527ee))
+
 ## [4.1.0](https://github.com/OpenDisplay/epaper-dithering/compare/epaper-dithering-v4.0.0...epaper-dithering-v4.1.0) (2026-05-05)
 
 
