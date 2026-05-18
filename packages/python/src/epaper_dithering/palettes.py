@@ -105,9 +105,9 @@ class ColorScheme(Enum):
         ),
     )
 
-    # NOTE: Values 6 and 7 are placeholders pending firmware assignment.
+    # Value 7 is reserved for future 8-level grayscale firmware support.
     GRAYSCALE_8 = (
-        6,
+        7,
         ColorPalette(
             colors={
                 "black": (0, 0, 0),
@@ -124,7 +124,7 @@ class ColorScheme(Enum):
     )
 
     GRAYSCALE_16 = (
-        7,
+        6,
         ColorPalette(
             colors={
                 "black": (0, 0, 0),

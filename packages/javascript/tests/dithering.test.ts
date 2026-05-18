@@ -203,8 +203,8 @@ describe('ColorScheme', () => {
     expect(fromValue(0)).toBe(ColorScheme.MONO);
     expect(fromValue(1)).toBe(ColorScheme.BWR);
     expect(fromValue(5)).toBe(ColorScheme.GRAYSCALE_4);
-    expect(fromValue(6)).toBe(ColorScheme.GRAYSCALE_8);
-    expect(fromValue(7)).toBe(ColorScheme.GRAYSCALE_16);
+    expect(fromValue(6)).toBe(ColorScheme.GRAYSCALE_16);
+    expect(fromValue(7)).toBe(ColorScheme.GRAYSCALE_8);
   });
 
   it('fromValue throws for out-of-range values', () => {

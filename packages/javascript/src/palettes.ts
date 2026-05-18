@@ -11,8 +11,9 @@ export enum ColorScheme {
   BWRY        = 3,
   BWGBRY      = 4,
   GRAYSCALE_4 = 5,
-  GRAYSCALE_8 = 6,
-  GRAYSCALE_16 = 7,
+  GRAYSCALE_16 = 6,
+  /** Reserved: 8-level grayscale, pending firmware value assignment. */
+  GRAYSCALE_8 = 7,
 }
 
 const PALETTES: Record<ColorScheme, ColorPalette> = {

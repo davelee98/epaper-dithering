@@ -46,8 +46,9 @@ pub enum ColorScheme {
     Bwry       = 3,
     Bwgbry     = 4,
     Grayscale4 = 5,
-    Grayscale8 = 6,
-    Grayscale16 = 7,
+    Grayscale16 = 6,
+    /// Reserved: 8-level grayscale, pending firmware value assignment.
+    Grayscale8 = 7,
 }
 
 // ── Palette data ─────────────────────────────────────────────────────────────
@@ -107,8 +108,8 @@ impl ColorScheme {
             ColorScheme::Bwry        => &PALETTE_BWRY,
             ColorScheme::Bwgbry      => &PALETTE_BWGBRY,
             ColorScheme::Grayscale4  => &PALETTE_GRAYSCALE4,
-            ColorScheme::Grayscale8  => &PALETTE_GRAYSCALE8,
             ColorScheme::Grayscale16 => &PALETTE_GRAYSCALE16,
+            ColorScheme::Grayscale8  => &PALETTE_GRAYSCALE8,
         }
     }
 }
@@ -132,8 +133,8 @@ impl TryFrom<u8> for ColorScheme {
             3 => Ok(ColorScheme::Bwry),
             4 => Ok(ColorScheme::Bwgbry),
             5 => Ok(ColorScheme::Grayscale4),
-            6 => Ok(ColorScheme::Grayscale8),
-            7 => Ok(ColorScheme::Grayscale16),
+            6 => Ok(ColorScheme::Grayscale16),
+            7 => Ok(ColorScheme::Grayscale8),
             _ => Err(DitherError::UnknownColorScheme(v)),
         }
     }
@@ -147,13 +148,13 @@ mod tests {
     fn firmware_values_are_correct() {
         assert_eq!(u8::from(ColorScheme::Mono), 0);
         assert_eq!(u8::from(ColorScheme::Bwr), 1);
-        assert_eq!(u8::from(ColorScheme::Grayscale16), 7);
+        assert_eq!(u8::from(ColorScheme::Grayscale16), 6);
     }
 
     #[test]
     fn from_into_u8() {
         assert_eq!(u8::from(ColorScheme::Mono), 0u8);
-        assert_eq!(u8::from(ColorScheme::Grayscale16), 7u8);
+        assert_eq!(u8::from(ColorScheme::Grayscale16), 6u8);
         let v: u8 = ColorScheme::Bwr.into();
         assert_eq!(v, 1u8);
     }
