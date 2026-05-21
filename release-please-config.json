@@ -1,19 +1,19 @@
 {
   "packages": {
-    "packages/python": {
+    ".": {
       "release-type": "python",
       "component": "epaper-dithering",
       "package-name": "epaper-dithering",
       "bump-minor-pre-major": false,
       "bump-patch-for-minor-pre-major": false,
-      "changelog-path": "CHANGELOG.md",
+      "changelog-path": "packages/python/CHANGELOG.md",
       "extra-files": [
-        "pyproject.toml",
-        "Cargo.toml",
-        "src/epaper_dithering/__init__.py",
-        "/packages/rust/core/Cargo.toml",
-        "/packages/rust/wasm/Cargo.toml",
-        "/packages/javascript/package.json"
+        "packages/python/pyproject.toml",
+        "packages/python/Cargo.toml",
+        "packages/python/src/epaper_dithering/__init__.py",
+        "packages/rust/core/Cargo.toml",
+        "packages/rust/wasm/Cargo.toml",
+        "packages/javascript/package.json"
       ]
     }
   },

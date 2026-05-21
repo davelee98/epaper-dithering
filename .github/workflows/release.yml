@@ -15,8 +15,8 @@ jobs:
   release-please:
     runs-on: ubuntu-latest
     outputs:
-      release-created: ${{ steps.release.outputs['packages/python--release_created'] }}
-      tag: ${{ steps.release.outputs['packages/python--tag_name'] }}
+      release-created: ${{ steps.release.outputs['release_created'] }}
+      tag: ${{ steps.release.outputs['tag_name'] }}
     steps:
       - uses: googleapis/release-please-action@v4
         id: release
