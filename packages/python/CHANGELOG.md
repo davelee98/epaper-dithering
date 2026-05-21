@@ -1,5 +1,12 @@
 # Changelog
 
+## [5.0.5](https://github.com/OpenDisplay/epaper-dithering/compare/epaper-dithering-v5.0.4...epaper-dithering-v5.0.5) (2026-05-21)
+
+
+### Bug Fixes
+
+* add musllinux_1_2 wheel for aarch64 ([a36b254](https://github.com/OpenDisplay/epaper-dithering/commit/a36b254a4cb78aaa34c506014a08e0d7902726cc))
+
 ## [5.0.3](https://github.com/OpenDisplay/epaper-dithering/compare/epaper-dithering-v5.0.2...epaper-dithering-v5.0.3) (2026-05-21)
 
 
@@ -261,6 +268,3 @@
 ### Features
 
 * initial release with dithering algorithms for e-paper displays ([03a5b4e](https://github.com/OpenDisplay-org/epaper-dithering/commit/03a5b4e59f5b3531b7607478f6ab6cc097a7feab))
-
-
-
