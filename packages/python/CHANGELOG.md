@@ -1,5 +1,12 @@
 # Changelog
 
+## [5.0.6](https://github.com/OpenDisplay/epaper-dithering/compare/epaper-dithering-v5.0.5...epaper-dithering-v5.0.6) (2026-05-21)
+
+
+### Bug Fixes
+
+* include OS in artifact name to prevent x86_64 collision between Linux and Windows builds ([c3db2d2](https://github.com/OpenDisplay/epaper-dithering/commit/c3db2d2922cec5daa6308d64d7f6f99ad7b8f2ef))
+
 ## [5.0.3](https://github.com/OpenDisplay/epaper-dithering/compare/epaper-dithering-v5.0.2...epaper-dithering-v5.0.3) (2026-05-21)
 
 
@@ -261,8 +268,3 @@
 ### Features
 
 * initial release with dithering algorithms for e-paper displays ([03a5b4e](https://github.com/OpenDisplay-org/epaper-dithering/commit/03a5b4e59f5b3531b7607478f6ab6cc097a7feab))
-
-
-
-
-
