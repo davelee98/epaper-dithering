@@ -1,5 +1,12 @@
 # Changelog
 
+## [5.0.3](https://github.com/OpenDisplay/epaper-dithering/compare/epaper-dithering-v5.0.2...epaper-dithering-v5.0.3) (2026-05-21)
+
+
+### Bug Fixes
+
+* skip already-uploaded wheels on PyPI publish retry ([b6f0bd5](https://github.com/OpenDisplay/epaper-dithering/commit/b6f0bd56aa349a9e3fee076f058b5e3704754551))
+
 ## [5.0.2](https://github.com/OpenDisplay/epaper-dithering/compare/epaper-dithering-v5.0.1...epaper-dithering-v5.0.2) (2026-05-21)
 
 
