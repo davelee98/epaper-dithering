@@ -74,13 +74,13 @@ jobs:
         with:
           working-directory: packages/python
           target: ${{ matrix.target }}
-          manylinux: auto
+          manylinux: ${{ matrix.manylinux || 'auto' }}
           args: --release --out dist --find-interpreter
           sccache: true
 
       - uses: actions/upload-artifact@v4
         with:
-          name: wheels-${{ matrix.target }}
+          name: wheels-${{ matrix.target }}-${{ matrix.manylinux || 'auto' }}
           path: packages/python/dist
 
   build-python-sdist:

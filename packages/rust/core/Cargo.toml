@@ -10,7 +10,12 @@ documentation = "https://docs.rs/epaper-dithering-core"
 keywords = ["epaper", "eink", "dithering", "color", "embedded"]
 categories = ["graphics", "multimedia::images", "embedded"]
 readme = "README.md"
-exclude = ["examples/minzi.jpeg"]
+exclude = [
+    "tests/fixtures/",
+    "examples/",
+    "out.png",
+    "out_rgb.png",
+]
 
 [dependencies]
 rayon = "1.10"
