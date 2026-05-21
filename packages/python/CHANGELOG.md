@@ -1,5 +1,12 @@
 # Changelog
 
+## [5.0.1](https://github.com/OpenDisplay/epaper-dithering/compare/epaper-dithering-v5.0.0...epaper-dithering-v5.0.1) (2026-05-21)
+
+
+### Bug Fixes
+
+* publish musllinux wheel for Alpine Linux compatibility ([9c14bc6](https://github.com/OpenDisplay/epaper-dithering/commit/9c14bc66c77be2b3fb7608b977bcafb1d932e372))
+
 ## [5.0.0](https://github.com/OpenDisplay/epaper-dithering/compare/epaper-dithering-v4.1.0...epaper-dithering-v5.0.0) (2026-05-18)
 
 
