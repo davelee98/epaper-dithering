@@ -1,5 +1,13 @@
 # Changelog
 
+## [5.0.2](https://github.com/OpenDisplay/epaper-dithering/compare/epaper-dithering-v5.0.1...epaper-dithering-v5.0.2) (2026-05-21)
+
+
+### Bug Fixes
+
+* broaden release-please scope to repo root ([50f0cfe](https://github.com/OpenDisplay/epaper-dithering/commit/50f0cfeecf87179c6438348c769c795573bc2376))
+* fix x86_64 wheel publishing and reduce crate size ([54d625c](https://github.com/OpenDisplay/epaper-dithering/commit/54d625c6a20ef0cfa2d1fdca9e5bfc99fcb8ee2a))
+
 ## [5.0.1](https://github.com/OpenDisplay/epaper-dithering/compare/epaper-dithering-v5.0.0...epaper-dithering-v5.0.1) (2026-05-21)
 
 
