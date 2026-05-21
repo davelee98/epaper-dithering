@@ -1,12 +1,5 @@
 # Changelog
 
-## [5.0.4](https://github.com/OpenDisplay/epaper-dithering/compare/epaper-dithering-v5.0.3...epaper-dithering-v5.0.4) (2026-05-21)
-
-
-### Bug Fixes
-
-* publish correct wheels for all Linux platforms including Alpine ([7f418fd](https://github.com/OpenDisplay/epaper-dithering/commit/7f418fd75294a61bb8d8b0a80e2ced55be7be96c))
-
 ## [5.0.3](https://github.com/OpenDisplay/epaper-dithering/compare/epaper-dithering-v5.0.2...epaper-dithering-v5.0.3) (2026-05-21)
 
 
@@ -268,3 +261,6 @@
 ### Features
 
 * initial release with dithering algorithms for e-paper displays ([03a5b4e](https://github.com/OpenDisplay-org/epaper-dithering/commit/03a5b4e59f5b3531b7607478f6ab6cc097a7feab))
+
+
+
