@@ -1,20 +1,26 @@
 {
   "packages": {
-    ".": {
+    "packages/python": {
       "release-type": "python",
       "component": "epaper-dithering",
       "package-name": "epaper-dithering",
       "bump-minor-pre-major": false,
       "bump-patch-for-minor-pre-major": false,
-      "changelog-path": "packages/python/CHANGELOG.md",
+      "changelog-path": "CHANGELOG.md",
       "extra-files": [
-        "packages/python/pyproject.toml",
-        "packages/python/Cargo.toml",
-        "packages/python/src/epaper_dithering/__init__.py",
-        "packages/rust/core/Cargo.toml",
-        "packages/rust/wasm/Cargo.toml",
-        "packages/javascript/package.json"
+        "pyproject.toml",
+        "Cargo.toml",
+        "src/epaper_dithering/__init__.py",
+        "/packages/javascript/package.json"
       ]
+    },
+    "packages/rust/core": {
+      "release-type": "rust",
+      "component": "epaper-dithering-core",
+      "package-name": "epaper-dithering-core",
+      "bump-minor-pre-major": false,
+      "bump-patch-for-minor-pre-major": false,
+      "changelog-path": "CHANGELOG.md"
     }
   },
   "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json"
