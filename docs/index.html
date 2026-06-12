@@ -350,6 +350,7 @@
       max-height: 65vh;
       width: auto;
       height: auto;
+      image-rendering: pixelated;
     }
 
     /* Empty state */
@@ -740,6 +741,7 @@ const MODES = {
 // ── State ────────────────────────────────────────────────────────
 
 let currentImageData = null;
+let pendingRaf = null;
 
 // ── DOM refs ─────────────────────────────────────────────────────
 
@@ -823,12 +825,15 @@ function runDither() {
   setStatus('working', 'processing…');
   algoBadge.textContent = modeKey.replace(/_/g, '-');
 
-  requestAnimationFrame(() => {
+  if (pendingRaf !== null) cancelAnimationFrame(pendingRaf);
+  pendingRaf = requestAnimationFrame(() => {
+    pendingRaf = null;
     const t0 = performance.now();
 
     const result = ditherImage(
       { width: currentImageData.width, height: currentImageData.height, data: currentImageData.data },
-      scheme, mode, useSerpentine, toneComp, gamutComp,
+      scheme,
+      { mode, serpentine: useSerpentine, tone: toneComp, gamut: gamutComp },
     );
 
     const elapsed = performance.now() - t0;
