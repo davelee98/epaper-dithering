@@ -1,5 +1,12 @@
 # Changelog
 
+## [5.0.7](https://github.com/OpenDisplay/epaper-dithering/compare/epaper-dithering-v5.0.6...epaper-dithering-v5.0.7) (2026-06-29)
+
+
+### Bug Fixes
+
+* re-release Python sdist with corrected workspace manifest ([#40](https://github.com/OpenDisplay/epaper-dithering/issues/40)) ([371b029](https://github.com/OpenDisplay/epaper-dithering/commit/371b029ea336e02e37ec16e083e2b4358b7eaa93))
+
 ## [5.0.6](https://github.com/OpenDisplay/epaper-dithering/compare/epaper-dithering-v5.0.5...epaper-dithering-v5.0.6) (2026-05-21)
 
 

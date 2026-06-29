@@ -19,7 +19,7 @@ from .palettes import (
     ColorScheme,
 )
 
-__version__ = "5.0.6"
+__version__ = "5.0.7"
 
 __all__ = [
     "dither_image",
