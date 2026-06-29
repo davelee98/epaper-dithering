@@ -48,6 +48,10 @@ Repository = "https://github.com/OpenDisplay-org/epaper-dithering"
 Documentation = "https://github.com/OpenDisplay-org/epaper-dithering#readme"
 
 [tool.maturin]
+# The sdist embeds the Rust workspace root (../../packages/rust/Cargo.toml) to resolve
+# the `epaper-dithering-core` path dependency, but ships only `core` — not `wasm`. The
+# workspace manifest must therefore not list `wasm` as a member, or downstream `cargo`
+# vendoring of the sdist breaks (issue #40). See `exclude = ["wasm"]` in that manifest.
 module-name = "epaper_dithering._rs"
 python-source = "src"
 features = ["pyo3/extension-module"]

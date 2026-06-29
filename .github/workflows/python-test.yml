@@ -19,6 +19,36 @@ defaults:
     working-directory: packages/python
 
 jobs:
+  # Guards against issue #40: the sdist embeds the Rust workspace root to resolve the
+  # `core` path dependency, but ships only the crates in the dependency graph. If the
+  # workspace manifest ever references a member it doesn't ship (e.g. `wasm`), `cargo`
+  # can't load it and downstream packaging (OpenSUSE/OBS `cargo vendor`) breaks. This
+  # builds the real sdist and confirms its embedded workspace manifest actually loads.
+  sdist-packaging:
+    name: sdist workspace manifest is loadable
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Build sdist
+        run: uv run --with maturin maturin sdist --out dist
+
+      - name: Verify embedded workspace manifest resolves
+        run: |
+          set -euo pipefail
+          tarball="$(ls dist/*.tar.gz)"
+          workdir="$(mktemp -d)"
+          tar xzf "$tarball" -C "$workdir"
+          manifest="$(find "$workdir" -path '*/rust/Cargo.toml' -print -quit)"
+          echo "Loading shipped workspace manifest: $manifest"
+          cargo metadata --no-deps --format-version 1 --manifest-path "$manifest" > /dev/null
+          echo "✅ sdist workspace manifest loads cleanly"
+
   test:
     name: Test Suite (Python ${{ matrix.python-version }})
     runs-on: ubuntu-latest
