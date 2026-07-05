@@ -56,7 +56,22 @@ fn dither_image(
     tone: Option<f64>,
     gamut: Option<f64>,
 ) -> PyResult<Vec<u8>> {
-    let _ = height;
+    // Validate the buffer against the caller's dimensions instead of silently
+    // deriving height and truncating trailing pixels on a width/length mismatch.
+    // Layout is flat RGB: len = width × height × 3.
+    let expected = width
+        .checked_mul(height)
+        .and_then(|n| n.checked_mul(3))
+        .ok_or_else(|| PyValueError::new_err("width × height × 3 overflows usize"))?;
+    if pixels.len() != expected {
+        return Err(PyValueError::new_err(format!(
+            "pixel buffer length ({}) does not match width × height × 3 ({} × {} × 3 = {})",
+            pixels.len(),
+            width,
+            height,
+            expected,
+        )));
+    }
     let img = ImageBuffer::new(pixels, width);
     let config = DitherConfig {
         mode: parse_mode(mode_id)?,

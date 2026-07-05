@@ -63,6 +63,27 @@ class TestDitheringAlgorithms:
         assert max_idx < scheme.color_count, f"{scheme.name}: pixel index {max_idx} >= color count {scheme.color_count}"
 
 
+class TestBufferValidation:
+    """Test the low-level `_rs.dither_image` validates buffer dimensions."""
+
+    def test_mismatched_dimensions_raise(self):
+        """A pixel buffer whose length != width * height * 3 must raise, not truncate."""
+        import epaper_dithering._rs as _rs
+
+        # 10x10 RGB image = 300 bytes; claim a height that does not match.
+        pixels = bytes(10 * 10 * 3)
+        with pytest.raises(ValueError):
+            _rs.dither_image(pixels, 10, 11, scheme_id=ColorScheme.MONO.value)
+
+    def test_matching_dimensions_succeed(self):
+        """The correct width/height is accepted."""
+        import epaper_dithering._rs as _rs
+
+        pixels = bytes(10 * 10 * 3)
+        indices = _rs.dither_image(pixels, 10, 10, scheme_id=ColorScheme.MONO.value)
+        assert len(indices) == 10 * 10
+
+
 class TestColorScience:
     """Test color science improvements."""
 
