@@ -308,6 +308,24 @@ pub fn gamut_compress(pixels: &mut [[f64; 3]], palette: &Palette, strength: f64)
         .collect();
     let n = pal_linear.len();
 
+    // Precompute the palette-hull edge geometry once (OKLab endpoints + linear endpoints for
+    // all i<j pairs) instead of rebuilding these arrays inside the per-pixel loop.
+    struct Edge {
+        a_lab: [f64; 3],
+        b_lab: [f64; 3],
+        a_lin: [f64; 3],
+        b_lin: [f64; 3],
+    }
+    let edges: Vec<Edge> = (0..n)
+        .flat_map(|i| (i + 1..n).map(move |j| (i, j)))
+        .map(|(i, j)| Edge {
+            a_lab: [pal_lab[i].l, pal_lab[i].a, pal_lab[i].b],
+            b_lab: [pal_lab[j].l, pal_lab[j].a, pal_lab[j].b],
+            a_lin: pal_linear[i],
+            b_lin: pal_linear[j],
+        })
+        .collect();
+
     pixels.par_iter_mut().for_each(|pixel| {
         let px_lab = rgb_to_oklab(pixel[0], pixel[1], pixel[2]);
         let px_lab_arr = [px_lab.l, px_lab.a, px_lab.b];
@@ -316,18 +334,14 @@ pub fn gamut_compress(pixels: &mut [[f64; 3]], palette: &Palette, strength: f64)
         let mut best_dist_sq = f64::INFINITY;
         let mut best_target = *pixel;
 
-        // Edges
-        for i in 0..n {
-            for j in (i + 1)..n {
-                let a_lab = [pal_lab[i].l, pal_lab[i].a, pal_lab[i].b];
-                let b_lab = [pal_lab[j].l, pal_lab[j].a, pal_lab[j].b];
-                let t = nearest_on_segment(px_lab_arr, a_lab, b_lab);
-                let nearest_lab = lerp3(a_lab, b_lab, t);
-                let d = dist_sq(px_lab_arr, nearest_lab);
-                if d < best_dist_sq {
-                    best_dist_sq = d;
-                    best_target = lerp3(pal_linear[i], pal_linear[j], t);
-                }
+        // Edges (endpoints precomputed above; vertices covered via clamped projection)
+        for e in &edges {
+            let t = nearest_on_segment(px_lab_arr, e.a_lab, e.b_lab);
+            let nearest_lab = lerp3(e.a_lab, e.b_lab, t);
+            let d = dist_sq(px_lab_arr, nearest_lab);
+            if d < best_dist_sq {
+                best_dist_sq = d;
+                best_target = lerp3(e.a_lin, e.b_lin, t);
             }
         }
 

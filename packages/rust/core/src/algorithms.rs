@@ -370,6 +370,20 @@ fn ordered_dither_impl(
     let (_palette_linear, palette_lab) = build_palette_lab(palette);
     let spread = ordered_spread(palette);
 
+    // Per-threshold gamma LUT: lut[t][v] = srgb_fraction_to_linear((v/255 + threshold_t).clamp).
+    // Only 16 thresholds × 256 byte values exist, so this removes all three per-pixel powf
+    // calls. Built from the exact same inputs as the scalar path, so results are bit-identical.
+    let lut: Vec<[f64; 256]> = (0..16)
+        .map(|t| {
+            let threshold = BAYER_4X4[t / 4][t % 4] * spread;
+            let mut row = [0.0_f64; 256];
+            for (v, slot) in row.iter_mut().enumerate() {
+                *slot = srgb_fraction_to_linear((v as f64 / 255.0 + threshold).clamp(0.0, 1.0));
+            }
+            row
+        })
+        .collect();
+
     pixels
         .par_chunks(3)
         .enumerate()
@@ -382,18 +396,12 @@ fn ordered_dither_impl(
 
             let x = i % width;
             let y = i / width;
-
-            let threshold = BAYER_4X4[y % 4][x % 4] * spread;
-
-            // Add threshold in sRGB-fraction space, then convert to linear for OKLab match.
-            let r_srgb = (rgb[0] as f64 / 255.0 + threshold).clamp(0.0, 1.0);
-            let g_srgb = (rgb[1] as f64 / 255.0 + threshold).clamp(0.0, 1.0);
-            let b_srgb = (rgb[2] as f64 / 255.0 + threshold).clamp(0.0, 1.0);
+            let t = (y % 4) * 4 + (x % 4);
 
             let lab = rgb_to_oklab(
-                srgb_fraction_to_linear(r_srgb),
-                srgb_fraction_to_linear(g_srgb),
-                srgb_fraction_to_linear(b_srgb),
+                lut[t][rgb[0] as usize],
+                lut[t][rgb[1] as usize],
+                lut[t][rgb[2] as usize],
             );
             match_pixel_oklab(lab, &palette_lab, WAB) as u8
         })
