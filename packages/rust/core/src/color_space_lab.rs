@@ -1,17 +1,12 @@
 //! OKLab color space and color matching for dithering.
 
-// sRGB -> XYZ matrix (D65 illuminant, BruceLinbloom)
-const M_RGB_XYZ: [[f64; 3]; 3] = [
-    [0.4124564, 0.3575761, 0.1804375],
-    [0.2126729, 0.7151522, 0.0721750],
-    [0.0193339, 0.1191920, 0.9503041],
-];
-
-// XYZ -> LMS (M1, Ottosson)
-const M1: [[f64; 3]; 3] = [
-    [0.8189330101, 0.3618667424, -0.1288597137],
-    [0.0329845436, 0.9293118715, 0.0361456387],
-    [0.0482003018, 0.2643662691, 0.6338517070],
+// Linear sRGB -> LMS (Ottosson's published combined matrix). This folds the
+// sRGB→XYZ and XYZ→LMS steps into one 3×3, halving the per-pixel matrix work in the
+// hot path and avoiding the drift of composing separately-sourced matrices.
+const M_RGB_LMS: [[f64; 3]; 3] = [
+    [0.4122214708, 0.5363325363, 0.0514459929],
+    [0.2119034982, 0.6806995451, 0.1073969566],
+    [0.0883024619, 0.2817188376, 0.6299787005],
 ];
 
 // cbrt(LMS) -> OKLab (M2, Ottosson)
@@ -36,15 +31,11 @@ pub struct OkLab {
     pub b: f64,
 }
 
-/// Linear RGB → OKLab. Pipeline: RGB → XYZ → LMS → cbrt → OKLab.
+/// Linear RGB → OKLab. Pipeline: RGB → LMS → cbrt → OKLab.
 pub fn rgb_to_oklab(r: f64, g: f64, b: f64) -> OkLab {
-    let x  = M_RGB_XYZ[0][0] * r + M_RGB_XYZ[0][1] * g + M_RGB_XYZ[0][2] * b;
-    let y  = M_RGB_XYZ[1][0] * r + M_RGB_XYZ[1][1] * g + M_RGB_XYZ[1][2] * b;
-    let z  = M_RGB_XYZ[2][0] * r + M_RGB_XYZ[2][1] * g + M_RGB_XYZ[2][2] * b;
-
-    let l = M1[0][0] * x + M1[0][1] * y + M1[0][2] * z;
-    let m = M1[1][0] * x + M1[1][1] * y + M1[1][2] * z;
-    let s = M1[2][0] * x + M1[2][1] * y + M1[2][2] * z;
+    let l = M_RGB_LMS[0][0] * r + M_RGB_LMS[0][1] * g + M_RGB_LMS[0][2] * b;
+    let m = M_RGB_LMS[1][0] * r + M_RGB_LMS[1][1] * g + M_RGB_LMS[1][2] * b;
+    let s = M_RGB_LMS[2][0] * r + M_RGB_LMS[2][1] * g + M_RGB_LMS[2][2] * b;
 
     let l_ = l.cbrt();
     let m_ = m.cbrt();
@@ -76,18 +67,11 @@ const M2_INV: [[f64; 3]; 3] = [
     [1.0, -0.0894841775, -1.2914855480],
 ];
 
-// M1_inv: LMS -> XYZ (Ottosson)
-const M1_INV: [[f64; 3]; 3] = [
-    [ 1.2270138511035211, -0.5577999806518222,  0.2812561489664678],
-    [-0.0405801784232806,  1.1122568696168302, -0.0716766786656012],
-    [-0.0763812845057069, -0.4214819784180127,  1.5861632204407947],
-];
-
-// XYZ -> linear sRGB (IEC 61966-2-1 D65)
-const M_XYZ_RGB: [[f64; 3]; 3] = [
-    [ 3.2404542, -1.5371385, -0.4985314],
-    [-0.9692660,  1.8760108,  0.0415560],
-    [ 0.0556434, -0.2040259,  1.0572252],
+// LMS -> linear sRGB (Ottosson's published combined inverse of M_RGB_LMS).
+const M_LMS_RGB: [[f64; 3]; 3] = [
+    [ 4.0767416621, -3.3077115913,  0.2309699292],
+    [-1.2684380046,  2.6097574011, -0.3413193965],
+    [-0.0041960863, -0.7034186147,  1.7076147010],
 ];
 
 /// OKLab → linear RGB. Output is clamped to [0, 1]. Inverse of `rgb_to_oklab`.
@@ -100,13 +84,9 @@ pub fn oklab_to_rgb(lab: OkLab) -> [f64; 3] {
     let m = m_ * m_ * m_;
     let s = s_ * s_ * s_;
 
-    let x = M1_INV[0][0] * l + M1_INV[0][1] * m + M1_INV[0][2] * s;
-    let y = M1_INV[1][0] * l + M1_INV[1][1] * m + M1_INV[1][2] * s;
-    let z = M1_INV[2][0] * l + M1_INV[2][1] * m + M1_INV[2][2] * s;
-
-    let r = M_XYZ_RGB[0][0] * x + M_XYZ_RGB[0][1] * y + M_XYZ_RGB[0][2] * z;
-    let g = M_XYZ_RGB[1][0] * x + M_XYZ_RGB[1][1] * y + M_XYZ_RGB[1][2] * z;
-    let b = M_XYZ_RGB[2][0] * x + M_XYZ_RGB[2][1] * y + M_XYZ_RGB[2][2] * z;
+    let r = M_LMS_RGB[0][0] * l + M_LMS_RGB[0][1] * m + M_LMS_RGB[0][2] * s;
+    let g = M_LMS_RGB[1][0] * l + M_LMS_RGB[1][1] * m + M_LMS_RGB[1][2] * s;
+    let b = M_LMS_RGB[2][0] * l + M_LMS_RGB[2][1] * m + M_LMS_RGB[2][2] * s;
 
     [r.clamp(0.0, 1.0), g.clamp(0.0, 1.0), b.clamp(0.0, 1.0)]
 }
@@ -151,9 +131,30 @@ mod tests {
     #[test]
     fn white_l_is_one() {
         let lab = rgb_to_oklab(1.0, 1.0, 1.0);
-        assert_relative_eq!(lab.l, 1.0, epsilon = 1e-4);
-        assert_relative_eq!(lab.a, 0.0, epsilon = 1e-4);
-        assert_relative_eq!(lab.b, 0.0, epsilon = 1e-4);
+        // With Ottosson's combined matrix, white maps to L=1, a=b=0 to full precision.
+        assert_relative_eq!(lab.l, 1.0, epsilon = 1e-6);
+        assert_relative_eq!(lab.a, 0.0, epsilon = 1e-6);
+        assert_relative_eq!(lab.b, 0.0, epsilon = 1e-6);
+    }
+
+    #[test]
+    fn oklab_roundtrip_is_identity() {
+        // rgb_to_oklab and oklab_to_rgb must be true inverses — catches any mis-transcribed
+        // coefficient in the combined forward/inverse matrices (e.g. a bad row breaks white).
+        for &rgb in &[
+            [1.0, 1.0, 1.0_f64],
+            [0.0, 0.0, 0.0],
+            [0.5, 0.5, 0.5],
+            [0.8, 0.2, 0.1],
+            [0.1, 0.6, 0.9],
+            [0.2126, 0.7152, 0.0722],
+        ] {
+            let lab = rgb_to_oklab(rgb[0], rgb[1], rgb[2]);
+            let back = oklab_to_rgb(lab);
+            for c in 0..3 {
+                assert_relative_eq!(back[c], rgb[c], epsilon = 1e-6);
+            }
+        }
     }
 
     #[test]

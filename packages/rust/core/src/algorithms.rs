@@ -307,15 +307,36 @@ pub fn direct_map(pixels: &[u8], palette: &Palette, canonical_palette: &Palette)
 
 // ── Ordered (Bayer) dithering ─────────────────────────────────────────────────
 
-// 4×4 Bayer matrix, normalized to [-0.5, 0.5]. Indexed as [y % 4][x % 4].
-// Values = (bayer_entry / 16.0) - 0.5 for the standard ordered Bayer matrix.
-// Written as exact fractions to keep precision (all are multiples of 1/16).
+// 4×4 Bayer matrix, zero-mean thresholds in (-0.5, 0.5). Indexed as [y % 4][x % 4].
+// Values = (bayer_entry + 0.5) / 16.0 - 0.5, the standard zero-mean normalization —
+// the +0.5 centering makes ordered dithering brightness-neutral (mean threshold = 0).
+// Written as exact fractions to keep precision (all are odd multiples of 1/32).
 const BAYER_4X4: [[f64; 4]; 4] = [
-    [-0.5000,  0.0000, -0.3750,  0.1250],
-    [ 0.2500, -0.2500,  0.3750, -0.1250],
-    [-0.3125,  0.1875, -0.4375,  0.0625],
-    [ 0.4375, -0.0625,  0.3125, -0.1875],
+    [-0.46875,  0.03125, -0.34375,  0.15625],
+    [ 0.28125, -0.21875,  0.40625, -0.09375],
+    [-0.28125,  0.21875, -0.40625,  0.09375],
+    [ 0.46875, -0.03125,  0.34375, -0.15625],
 ];
+
+/// Threshold amplitude (in sRGB-fraction space) for ordered dither on this palette.
+///
+/// Ordered dithering trades quantization error for a fixed threshold pattern; the
+/// threshold should be scaled to the palette's quantization step. For an evenly-spaced
+/// grayscale ramp of `n` levels the step is `1/(n-1)`, so a full ±0.5 threshold is
+/// `2·(n-1)×` too large (e.g. 14× for 16-level gray) and swamps fine detail with noise.
+///
+/// Sparse palettes (mono + color) keep the full ±0.5 spread: their transitions are
+/// dominated by black↔white/ink decisions where the wide threshold is the tuned,
+/// tested behavior (see the issue-#27 property test).
+fn ordered_spread(palette: &Palette) -> f64 {
+    let is_grayscale =
+        palette.colors.len() >= 3 && palette.colors.iter().all(|&[r, g, b]| r == g && g == b);
+    if is_grayscale {
+        1.0 / (palette.colors.len() - 1) as f64
+    } else {
+        1.0
+    }
+}
 
 /// Ordered (Bayer 4×4) dither. Pixels are independent — parallelized with rayon.
 ///
@@ -324,6 +345,9 @@ const BAYER_4X4: [[f64; 4]; 4] = [
 /// (the sRGB gamma is convex, so a fixed linear ±0.5 step is huge near 0 and tiny near 1).
 /// sRGB-space thresholding gives uniform perceptual dot density across the tonal range,
 /// matching how error diffusion already accumulates error. See GitHub issue #27.
+///
+/// The threshold amplitude is scaled by `ordered_spread` to the palette's quantization
+/// step so dense grayscale ramps are not swamped by full-range dither noise.
 pub fn ordered_dither(pixels: &[u8], width: usize, palette: &Palette) -> Vec<u8> {
     ordered_dither_impl(pixels, width, palette, None)
 }
@@ -344,6 +368,21 @@ fn ordered_dither_impl(
     canonical_palette: Option<&Palette>,
 ) -> Vec<u8> {
     let (_palette_linear, palette_lab) = build_palette_lab(palette);
+    let spread = ordered_spread(palette);
+
+    // Per-threshold gamma LUT: lut[t][v] = srgb_fraction_to_linear((v/255 + threshold_t).clamp).
+    // Only 16 thresholds × 256 byte values exist, so this removes all three per-pixel powf
+    // calls. Built from the exact same inputs as the scalar path, so results are bit-identical.
+    let lut: Vec<[f64; 256]> = (0..16)
+        .map(|t| {
+            let threshold = BAYER_4X4[t / 4][t % 4] * spread;
+            let mut row = [0.0_f64; 256];
+            for (v, slot) in row.iter_mut().enumerate() {
+                *slot = srgb_fraction_to_linear((v as f64 / 255.0 + threshold).clamp(0.0, 1.0));
+            }
+            row
+        })
+        .collect();
 
     pixels
         .par_chunks(3)
@@ -357,18 +396,12 @@ fn ordered_dither_impl(
 
             let x = i % width;
             let y = i / width;
-
-            let threshold = BAYER_4X4[y % 4][x % 4];
-
-            // Add threshold in sRGB-fraction space, then convert to linear for OKLab match.
-            let r_srgb = (rgb[0] as f64 / 255.0 + threshold).clamp(0.0, 1.0);
-            let g_srgb = (rgb[1] as f64 / 255.0 + threshold).clamp(0.0, 1.0);
-            let b_srgb = (rgb[2] as f64 / 255.0 + threshold).clamp(0.0, 1.0);
+            let t = (y % 4) * 4 + (x % 4);
 
             let lab = rgb_to_oklab(
-                srgb_fraction_to_linear(r_srgb),
-                srgb_fraction_to_linear(g_srgb),
-                srgb_fraction_to_linear(b_srgb),
+                lut[t][rgb[0] as usize],
+                lut[t][rgb[1] as usize],
+                lut[t][rgb[2] as usize],
             );
             match_pixel_oklab(lab, &palette_lab, WAB) as u8
         })
@@ -464,7 +497,11 @@ mod tests {
     ///
     /// We measure transitions (adjacent columns with differing palette indices) per band
     /// in the mid-tone region and assert the max/min ratio stays modest. Empirically the
-    /// linear-space implementation produces ratio ≈ 13.5; sRGB-space ≈ 4.3.
+    /// linear-space implementation produces ratio ≈ 13.5; sRGB-space ≈ 2.2.
+    ///
+    /// The mono decision midpoint sits at OKLab L=0.5 ≈ sRGB 188, so the top two bands
+    /// (sRGB ≳ 192) are already in the highlight roll-off where dither activity legitimately
+    /// tapers; we exclude them along with the pure-black first band.
     #[test]
     fn ordered_dither_activity_is_perceptually_uniform() {
         const W: usize = 256;
@@ -492,9 +529,10 @@ mod tests {
             }
         }
 
-        // Mid-tone bands (skip the first and last — they're near pure black/white where
-        // the threshold is clamped and dither activity legitimately falls off).
-        let mid = &transitions[1..BANDS - 1];
+        // Mid-tone bands: skip the pure-black first band and the top two near-white bands
+        // (past the mono midpoint ≈ sRGB 188) where the threshold clamps and dither
+        // activity legitimately falls off.
+        let mid = &transitions[1..BANDS - 2];
         let max = *mid.iter().max().unwrap();
         let min = *mid.iter().min().unwrap();
         assert!(min > 0, "every mid-tone band should have at least one transition: {transitions:?}");
@@ -505,6 +543,84 @@ mod tests {
              expected sRGB-space ordered dither to spread roughly uniformly across \
              mid-tones. Per-band transitions: {transitions:?}"
         );
+    }
+
+    #[test]
+    fn bayer_matrix_is_zero_mean() {
+        // A biased Bayer matrix systematically darkens (or brightens) every ordered-
+        // dithered image. The standard (v + 0.5)/16 - 0.5 normalization sums to zero.
+        let sum: f64 = BAYER_4X4.iter().flatten().sum();
+        assert!(sum.abs() < 1e-12, "Bayer thresholds must sum to zero, got {sum}");
+    }
+
+    #[test]
+    fn ordered_dither_is_brightness_neutral_at_midpoint() {
+        // Find the mono decision midpoint: the smallest gray value whose threshold-free
+        // OKLab match flips from black (0) to white (1).
+        let pal = ColorScheme::Mono.palette();
+        let (_, pal_lab) = build_palette_lab(pal);
+        let midpoint = (0u16..=255)
+            .find(|&v| {
+                let lin = srgb_channel_to_linear(v as u8);
+                let lab = rgb_to_oklab(lin, lin, lin);
+                match_pixel_oklab(lab, &pal_lab, WAB) == 1
+            })
+            .expect("mono palette must have a black→white transition") as u8;
+
+        // Dither a solid midpoint-gray field. With a zero-mean threshold the white
+        // fraction should sit near 0.5; the old -1/32 bias produced ≈ 7/16.
+        const N: usize = 32;
+        let pixels = solid_image(midpoint, midpoint, midpoint, N, N);
+        let out = ordered_dither(&pixels, N, pal);
+        let white = out.iter().filter(|&&v| v == 1).count() as f64 / out.len() as f64;
+        assert!(
+            (white - 0.5).abs() <= 1.0 / 16.0,
+            "ordered dither at the mono midpoint should be ~50% white, got {white}"
+        );
+    }
+
+    #[test]
+    fn ordered_dither_grayscale16_tracks_ramp_and_uses_many_levels() {
+        // On a horizontal sRGB ramp the full ±0.5 threshold swamps the 17/255 GS16 step
+        // (14× too large). After scaling by ordered_spread, block-averaged output should
+        // track the input ramp and exercise most of the 16 levels.
+        const W: usize = 256;
+        const H: usize = 4;
+        let pal = ColorScheme::Grayscale16.palette();
+
+        let mut pixels = Vec::with_capacity(W * H * 3);
+        for _ in 0..H {
+            for x in 0..W {
+                let v = x as u8;
+                pixels.extend_from_slice(&[v, v, v]);
+            }
+        }
+        let out = ordered_dither(&pixels, W, pal);
+
+        // (a) 4-wide block average of palette level tracks the input level.
+        let levels: Vec<f64> = pal.colors.iter().map(|&[r, _, _]| r as f64).collect();
+        let mut max_err = 0.0_f64;
+        for bx in 0..W / 4 {
+            let mut sum = 0.0;
+            for y in 0..H {
+                for dx in 0..4 {
+                    let x = bx * 4 + dx;
+                    sum += levels[out[y * W + x] as usize];
+                }
+            }
+            let avg = sum / (H * 4) as f64;
+            let input = (bx * 4 + 1) as f64; // center-ish input value
+            max_err = max_err.max((avg - input).abs());
+        }
+        assert!(max_err < 24.0, "block-averaged output should track the ramp, max_err={max_err}");
+
+        // (b) most of the 16 levels are used.
+        let mut seen = [false; 16];
+        for &idx in &out {
+            seen[idx as usize] = true;
+        }
+        let used = seen.iter().filter(|&&s| s).count();
+        assert!(used >= 12, "GS16 ordered dither should use ≥12 levels, used {used}");
     }
 
     #[test]

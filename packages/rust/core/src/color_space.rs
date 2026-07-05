@@ -15,14 +15,21 @@ pub fn srgb_fraction_to_linear(value: f64) -> f64 {
     }
 }
 
-/// Linear [0.0–1.0] → sRGB [0–255]. Inverse of `srgb_channel_to_linear`.
-pub fn linear_channel_to_srgb(linear: f64) -> u8 {
-    let srgb = if linear <= 0.0031308 {
+/// Linear [0.0–1.0] → continuous sRGB fraction [0.0–1.0]. Inverse of
+/// `srgb_fraction_to_linear`; the continuous counterpart of `linear_channel_to_srgb`,
+/// useful when a gamma-encoded value is needed without quantizing to a byte (e.g. applying
+/// a tone curve about the perceptual mid-gray).
+pub fn linear_fraction_to_srgb(linear: f64) -> f64 {
+    if linear <= 0.0031308 {
         linear * 12.92
     } else {
         1.055 * linear.powf(1.0 / 2.4) - 0.055
-    };
-    (srgb * 255.0).round() as u8
+    }
+}
+
+/// Linear [0.0–1.0] → sRGB [0–255]. Inverse of `srgb_channel_to_linear`.
+pub fn linear_channel_to_srgb(linear: f64) -> u8 {
+    (linear_fraction_to_srgb(linear) * 255.0).round() as u8
 }
 
 

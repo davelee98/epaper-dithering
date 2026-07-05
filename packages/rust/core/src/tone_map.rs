@@ -5,7 +5,7 @@
 
 use rayon::prelude::*;
 
-use crate::color_space::srgb_channel_to_linear;
+use crate::color_space::{linear_fraction_to_srgb, srgb_channel_to_linear, srgb_fraction_to_linear};
 use crate::color_space_lab::{oklab_to_rgb, rgb_to_oklab, OkLab};
 use crate::palettes::Palette;
 
@@ -30,6 +30,24 @@ fn palette_to_linear(palette: &Palette) -> Vec<[f64; 3]> {
             ]
         })
         .collect()
+}
+
+/// Scale a near-black pixel toward a target luminance while preserving its channel ratios
+/// (hue/chroma). Used by both dynamic-range compressors for the `y ≈ 0` branch where the
+/// `target_y / y` scale would explode. When the pixel is exactly black, all channels are
+/// set to `target_y` (neutral).
+fn scale_dark_pixel(pixel: &mut [f64; 3], target_y: f64) {
+    let max_ch = pixel[0].max(pixel[1]).max(pixel[2]);
+    if max_ch > 1e-12 {
+        let scale = target_y / max_ch;
+        pixel[0] = (pixel[0] * scale).clamp(0.0, 1.0);
+        pixel[1] = (pixel[1] * scale).clamp(0.0, 1.0);
+        pixel[2] = (pixel[2] * scale).clamp(0.0, 1.0);
+    } else {
+        pixel[0] = target_y;
+        pixel[1] = target_y;
+        pixel[2] = target_y;
+    }
 }
 
 /// Two percentiles from the same data in one sort. Returns (p_low_val, p_high_val).
@@ -87,24 +105,34 @@ pub fn adjust_saturation(pixels: &mut [[f64; 3]], factor: f64) {
 /// `shadows` controls lift on the lower half (0.0 = identity, 1.0 = strong; power = 1 − shadows).
 /// `highlights` controls compression on the upper half (0.0 = identity, 1.0 = strong; power = 1 + highlights).
 ///
+/// The curve pivots about **perceptual mid-gray** (sRGB 0.5 ≈ linear 0.214), not linear 0.5
+/// (≈ sRGB 188). Pivoting in linear space would put ~74% of the perceptual tonal range in the
+/// "shadows" half; gamma-space pivoting splits shadows/highlights at mid-gray as a user expects.
+///
 /// Each half is independent — `shadows = 0` leaves shadows alone even if `highlights > 0`.
 /// Hue is preserved by scaling all three channels by `Y' / Y`.
 pub fn apply_shadows_highlights(pixels: &mut [[f64; 3]], shadows: f64, highlights: f64) {
     if shadows <= 0.0 && highlights <= 0.0 {
         return;
     }
+    // Guard against degenerate exponents (negative → curve inversion, >1 → runaway).
+    let shadows = shadows.clamp(0.0, 1.0);
+    let highlights = highlights.clamp(0.0, 1.0);
     pixels.par_iter_mut().for_each(|pixel| {
         let y = luminance(*pixel);
         if y <= 1e-6 {
             return;
         }
-        let y_prime = if y <= 0.5 {
-            let t = y / 0.5;
+        // Apply the S-curve in gamma-encoded space so the pivot is at perceptual mid-gray.
+        let g = linear_fraction_to_srgb(y);
+        let g_prime = if g <= 0.5 {
+            let t = g / 0.5;
             0.5 * t.powf(1.0 - shadows)
         } else {
-            let t = (y - 0.5) / 0.5;
+            let t = (g - 0.5) / 0.5;
             0.5 + 0.5 * t.powf(1.0 + highlights)
         };
+        let y_prime = srgb_fraction_to_linear(g_prime);
         let scale = (y_prime / y).clamp(0.0, 1e6);
         pixel[0] = (pixel[0] * scale).clamp(0.0, 1.0);
         pixel[1] = (pixel[1] * scale).clamp(0.0, 1.0);
@@ -144,18 +172,7 @@ pub fn compress_dynamic_range(pixels: &mut [[f64; 3]], palette: &Palette, streng
             pixel[2] = (pixel[2] * scale).clamp(0.0, 1.0);
         } else {
             // Pixel luminance is near zero — preserve channel ratios, scale toward display black.
-            let blended_black = black_y * strength;
-            let max_ch = pixel[0].max(pixel[1]).max(pixel[2]);
-            if max_ch > 1e-12 {
-                let scale = blended_black / max_ch;
-                pixel[0] = (pixel[0] * scale).clamp(0.0, 1.0);
-                pixel[1] = (pixel[1] * scale).clamp(0.0, 1.0);
-                pixel[2] = (pixel[2] * scale).clamp(0.0, 1.0);
-            } else {
-                pixel[0] = blended_black;
-                pixel[1] = blended_black;
-                pixel[2] = blended_black;
-            }
+            scale_dark_pixel(pixel, black_y * strength);
         }
     });
 }
@@ -203,7 +220,10 @@ pub fn auto_compress_dynamic_range(pixels: &mut [[f64; 3]], palette: &Palette) {
         let log_range = log_max - log_min;
         if log_range > 1e-6 {
             let skew = (log_max - (l_lav + 1e-5).ln()) / log_range;
-            skew.powf(1.4).clamp(0.0, 1.0)
+            // Clamp before powf: for high-key images the log-average can slightly exceed
+            // log_max, making `skew` negative — `(-x).powf(1.4)` is NaN and would poison
+            // every output pixel. Clamping first keeps strength in [0, 1].
+            skew.clamp(0.0, 1.0).powf(1.4)
         } else {
             1.0
         }
@@ -211,10 +231,13 @@ pub fn auto_compress_dynamic_range(pixels: &mut [[f64; 3]], palette: &Palette) {
         1.0
     };
 
-    // Remap [p_low, p_high] → [black_y, white_y] at computed strength
+    // Remap [p_low, p_high] → [black_y, white_y] at computed strength.
+    // `normalized` is clamped to [0, 1] so the darkest/brightest percentile outliers
+    // saturate at the display black/white points instead of extrapolating past them
+    // (unclamped, the bottom 2% would map below display black and crush to pure 0).
     pixels.par_iter_mut().for_each(|pixel| {
         let y = luminance(*pixel);
-        let normalized = (y - p_low) / image_range;
+        let normalized = ((y - p_low) / image_range).clamp(0.0, 1.0);
         let target_y_full = black_y + normalized * display_range;
         let target_y = y + strength * (target_y_full - y);
         if y > 1e-6 {
@@ -223,7 +246,8 @@ pub fn auto_compress_dynamic_range(pixels: &mut [[f64; 3]], palette: &Palette) {
             pixel[1] = (pixel[1] * scale).clamp(0.0, 1.0);
             pixel[2] = (pixel[2] * scale).clamp(0.0, 1.0);
         } else {
-            *pixel = [black_y, black_y, black_y];
+            // Near-black: honor strength and preserve chroma (y=0 → normalized=0 → target black_y).
+            scale_dark_pixel(pixel, target_y);
         }
     });
 }
@@ -284,6 +308,24 @@ pub fn gamut_compress(pixels: &mut [[f64; 3]], palette: &Palette, strength: f64)
         .collect();
     let n = pal_linear.len();
 
+    // Precompute the palette-hull edge geometry once (OKLab endpoints + linear endpoints for
+    // all i<j pairs) instead of rebuilding these arrays inside the per-pixel loop.
+    struct Edge {
+        a_lab: [f64; 3],
+        b_lab: [f64; 3],
+        a_lin: [f64; 3],
+        b_lin: [f64; 3],
+    }
+    let edges: Vec<Edge> = (0..n)
+        .flat_map(|i| (i + 1..n).map(move |j| (i, j)))
+        .map(|(i, j)| Edge {
+            a_lab: [pal_lab[i].l, pal_lab[i].a, pal_lab[i].b],
+            b_lab: [pal_lab[j].l, pal_lab[j].a, pal_lab[j].b],
+            a_lin: pal_linear[i],
+            b_lin: pal_linear[j],
+        })
+        .collect();
+
     pixels.par_iter_mut().for_each(|pixel| {
         let px_lab = rgb_to_oklab(pixel[0], pixel[1], pixel[2]);
         let px_lab_arr = [px_lab.l, px_lab.a, px_lab.b];
@@ -292,18 +334,14 @@ pub fn gamut_compress(pixels: &mut [[f64; 3]], palette: &Palette, strength: f64)
         let mut best_dist_sq = f64::INFINITY;
         let mut best_target = *pixel;
 
-        // Edges
-        for i in 0..n {
-            for j in (i + 1)..n {
-                let a_lab = [pal_lab[i].l, pal_lab[i].a, pal_lab[i].b];
-                let b_lab = [pal_lab[j].l, pal_lab[j].a, pal_lab[j].b];
-                let t = nearest_on_segment(px_lab_arr, a_lab, b_lab);
-                let nearest_lab = lerp3(a_lab, b_lab, t);
-                let d = dist_sq(px_lab_arr, nearest_lab);
-                if d < best_dist_sq {
-                    best_dist_sq = d;
-                    best_target = lerp3(pal_linear[i], pal_linear[j], t);
-                }
+        // Edges (endpoints precomputed above; vertices covered via clamped projection)
+        for e in &edges {
+            let t = nearest_on_segment(px_lab_arr, e.a_lab, e.b_lab);
+            let nearest_lab = lerp3(e.a_lab, e.b_lab, t);
+            let d = dist_sq(px_lab_arr, nearest_lab);
+            if d < best_dist_sq {
+                best_dist_sq = d;
+                best_target = lerp3(e.a_lin, e.b_lin, t);
             }
         }
 
@@ -412,6 +450,55 @@ mod tests {
             let d: f64 = got.iter().zip(expected.iter()).map(|(a, b)| (a - b).abs()).sum();
             assert!(d < 1e-6, "pixel {i} should not be modified by auto-compress: moved by {d}");
         }
+    }
+
+    #[test]
+    fn auto_compress_does_not_crush_dark_outliers() {
+        // A high-key image (bright cluster overshooting white_y, triggering compression) with a
+        // couple of near-black outliers far below the 2nd percentile. Pre-fix, the unclamped
+        // remap sent `normalized` negative for those outliers, pulling their target luminance
+        // below display black and crushing them darker than they started. Post-clamp, a
+        // sub-percentile pixel saturates at the display black floor and is never darkened.
+        let pal = spectra_palette();
+
+        // 98 bright pixels spread 0.7..1.0 (so p2 lands ~0.7, well above the outliers),
+        // plus 2 near-black outliers at y ≈ 0.0004.
+        let mut pixels: Vec<[f64; 3]> = (0..98)
+            .map(|i| {
+                let v = 0.7 + 0.3 * (i as f64 / 97.0);
+                [v, v, v]
+            })
+            .collect();
+        let outlier = [0.0004_f64, 0.0004, 0.0004];
+        pixels.push(outlier);
+        pixels.push(outlier);
+
+        let in_y = luminance(outlier);
+        auto_compress_dynamic_range(&mut pixels, pal);
+        let out_y = luminance(pixels[98]);
+        assert!(
+            out_y >= in_y - 1e-9,
+            "sub-percentile dark outlier must not be crushed darker (in={in_y:.6}, out={out_y:.6})"
+        );
+    }
+
+    #[test]
+    fn auto_compress_preserves_dark_pixel_chroma() {
+        // A near-black but distinctly blue outlier must keep blue dominant after auto-compress,
+        // rather than being flattened to neutral display black.
+        let pal = spectra_palette();
+        // Blue channel 1e-5 → luminance ≈ 7e-7 < 1e-6, so this exercises the near-zero dark
+        // branch, which pre-fix flattened the pixel to neutral display black.
+        let mut pixels = vec![[1.0_f64, 1.0, 1.0]; 96];
+        pixels.extend(std::iter::repeat_n([0.0_f64, 0.0, 1e-5], 4));
+
+        auto_compress_dynamic_range(&mut pixels, pal);
+
+        let [r, g, b] = pixels[96];
+        assert!(
+            b >= r && b >= g && b > 0.0,
+            "blue should remain dominant after auto-compress of a dark blue pixel: [{r}, {g}, {b}]"
+        );
     }
 
     #[test]
