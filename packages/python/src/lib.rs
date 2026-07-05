@@ -1,8 +1,10 @@
 use epaper_dithering_core::{
+    color_space_lab::rgb_to_oklab,
     dither, dither_with_canonical, DitherConfig,
     enums::{DitherMode, GamutCompression, ToneCompression},
     measured_palettes::CATALOG,
     palettes::{ColorScheme, Palette},
+    tone_map,
     types::ImageBuffer,
 };
 use pyo3::exceptions::PyValueError;
@@ -10,6 +12,22 @@ use pyo3::prelude::*;
 
 fn parse_mode(v: u8) -> PyResult<DitherMode> {
     DitherMode::try_from(v).map_err(|e| PyValueError::new_err(e.to_string()))
+}
+
+/// Validate image dimensions before constructing an `ImageBuffer` (which panics on mismatch).
+fn validate_image(pixels: &[u8], width: usize) -> PyResult<()> {
+    if width == 0 {
+        return Err(PyValueError::new_err("width must be greater than 0"));
+    }
+    if !pixels.len().is_multiple_of(3) {
+        return Err(PyValueError::new_err("pixel buffer length must be a multiple of 3"));
+    }
+    if !(pixels.len() / 3).is_multiple_of(width) {
+        return Err(PyValueError::new_err(
+            "pixel count is not a whole number of rows for the given width",
+        ));
+    }
+    Ok(())
 }
 
 fn parse_tone(v: Option<f64>) -> ToneCompression {
@@ -57,6 +75,7 @@ fn dither_image(
     gamut: Option<f64>,
 ) -> PyResult<Vec<u8>> {
     let _ = height;
+    validate_image(pixels, width)?;
     let img = ImageBuffer::new(pixels, width);
     let config = DitherConfig {
         mode: parse_mode(mode_id)?,
@@ -75,6 +94,15 @@ fn dither_image(
                 return Err(PyValueError::new_err("palette_bytes length must be a multiple of 3"));
             }
             let colors: Vec<[u8; 3]> = bytes.chunks_exact(3).map(|c| [c[0], c[1], c[2]]).collect();
+            if colors.len() < 2 {
+                return Err(PyValueError::new_err("palette must have at least 2 colors"));
+            }
+            if accent_idx >= colors.len() {
+                return Err(PyValueError::new_err(format!(
+                    "accent_idx {accent_idx} out of range for {}-color palette",
+                    colors.len()
+                )));
+            }
             let palette = Palette::new(colors, accent_idx);
             if let Some(id) = scheme_id {
                 let scheme = ColorScheme::try_from(id)
@@ -91,6 +119,74 @@ fn dither_image(
         }
         (None, None) => Err(PyValueError::new_err("must provide either scheme_id or palette_bytes")),
     }
+}
+
+// ── Preprocessing steps (linear-RGB buffers) for tooling/visualization ──────────
+//
+// These expose the pre-dither pipeline stages so scripts can inspect intermediate
+// buffers. Input/output are flat linear-RGB f64 (length a multiple of 3).
+
+fn to_linear_pixels(pixels: &[f64]) -> PyResult<Vec<[f64; 3]>> {
+    if !pixels.len().is_multiple_of(3) {
+        return Err(PyValueError::new_err("pixel buffer length must be a multiple of 3"));
+    }
+    Ok(pixels.chunks_exact(3).map(|c| [c[0], c[1], c[2]]).collect())
+}
+
+fn palette_from_bytes(palette_bytes: &[u8]) -> PyResult<Palette> {
+    if !palette_bytes.len().is_multiple_of(3) {
+        return Err(PyValueError::new_err("palette_bytes length must be a multiple of 3"));
+    }
+    let colors: Vec<[u8; 3]> = palette_bytes.chunks_exact(3).map(|c| [c[0], c[1], c[2]]).collect();
+    if colors.len() < 2 {
+        return Err(PyValueError::new_err("palette must have at least 2 colors"));
+    }
+    // accent_idx is irrelevant for tone/gamut ops; use 0.
+    Ok(Palette::new(colors, 0))
+}
+
+fn flatten(pixels: Vec<[f64; 3]>) -> Vec<f64> {
+    pixels.into_iter().flatten().collect()
+}
+
+/// Dynamic-range compression on a linear-RGB buffer. `strength=None` → auto (histogram-based).
+#[pyfunction]
+#[pyo3(signature = (pixels, palette_bytes, strength=None))]
+fn tone_compress(pixels: Vec<f64>, palette_bytes: &[u8], strength: Option<f64>) -> PyResult<Vec<f64>> {
+    let mut px = to_linear_pixels(&pixels)?;
+    let palette = palette_from_bytes(palette_bytes)?;
+    match strength {
+        None => tone_map::auto_compress_dynamic_range(&mut px, &palette),
+        Some(s) if s > 0.0 => tone_map::compress_dynamic_range(&mut px, &palette, s),
+        _ => {}
+    }
+    Ok(flatten(px))
+}
+
+/// Gamut compression on a linear-RGB buffer. `strength=None` → full strength (1.0).
+#[pyfunction]
+#[pyo3(signature = (pixels, palette_bytes, strength=None))]
+fn gamut_compress(pixels: Vec<f64>, palette_bytes: &[u8], strength: Option<f64>) -> PyResult<Vec<f64>> {
+    let mut px = to_linear_pixels(&pixels)?;
+    let palette = palette_from_bytes(palette_bytes)?;
+    let s = strength.unwrap_or(1.0);
+    if s > 0.0 {
+        tone_map::gamut_compress(&mut px, &palette, s);
+    }
+    Ok(flatten(px))
+}
+
+/// Convert a flat linear-RGB f64 buffer to flat OKLab f64 (L, a, b per pixel).
+#[pyfunction]
+fn rgb_to_oklab_buffer(pixels: Vec<f64>) -> PyResult<Vec<f64>> {
+    let px = to_linear_pixels(&pixels)?;
+    Ok(px
+        .into_iter()
+        .flat_map(|[r, g, b]| {
+            let lab = rgb_to_oklab(r, g, b);
+            [lab.l, lab.a, lab.b]
+        })
+        .collect())
 }
 
 /// Returns all measured palettes from the Rust catalog.
@@ -116,5 +212,8 @@ fn measured_palettes() -> Vec<(String, Vec<u8>, Vec<String>, usize, u8)> {
 fn _rs(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(dither_image, m)?)?;
     m.add_function(wrap_pyfunction!(measured_palettes, m)?)?;
+    m.add_function(wrap_pyfunction!(tone_compress, m)?)?;
+    m.add_function(wrap_pyfunction!(gamut_compress, m)?)?;
+    m.add_function(wrap_pyfunction!(rgb_to_oklab_buffer, m)?)?;
     Ok(())
 }

@@ -252,3 +252,19 @@ describe('DitherMode', () => {
     expect(DitherMode.JARVIS_JUDICE_NINKE).toBe(8);
   });
 });
+
+describe('measured palette validation', () => {
+  it('throws a clear error when the accent name is not a palette color', () => {
+    const image = createTestImage(4, 4, { r: 128, g: 128, b: 128 });
+    const badPalette = {
+      colors: {
+        black: { r: 0, g: 0, b: 0 },
+        white: { r: 255, g: 255, b: 255 },
+      },
+      accent: 'crimson', // not present in colors
+    };
+    expect(() => ditherImage(image, badPalette, { mode: DitherMode.BURKES })).toThrow(
+      /accent color 'crimson' not found/
+    );
+  });
+});

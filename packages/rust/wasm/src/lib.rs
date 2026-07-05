@@ -48,6 +48,17 @@ pub fn dither_image(
     tone: Option<f64>,
     gamut: Option<f64>,
 ) -> Result<Vec<u8>, JsValue> {
+    if width == 0 {
+        return Err(JsValue::from_str("width must be greater than 0"));
+    }
+    if pixels.len() % 3 != 0 {
+        return Err(JsValue::from_str("pixel buffer length must be a multiple of 3"));
+    }
+    if (pixels.len() / 3) % width != 0 {
+        return Err(JsValue::from_str(
+            "pixel count is not a whole number of rows for the given width",
+        ));
+    }
     let img = ImageBuffer::new(pixels, width);
     let config = DitherConfig {
         mode: parse_mode(mode_id)?,
@@ -69,6 +80,15 @@ pub fn dither_image(
             return Err(JsValue::from_str("palette_bytes length must be a multiple of 3"));
         }
         let colors: Vec<[u8; 3]> = palette_bytes.chunks_exact(3).map(|c| [c[0], c[1], c[2]]).collect();
+        if colors.len() < 2 {
+            return Err(JsValue::from_str("palette must have at least 2 colors"));
+        }
+        if accent_idx >= colors.len() {
+            return Err(JsValue::from_str(&format!(
+                "accent_idx {accent_idx} out of range for {}-color palette",
+                colors.len()
+            )));
+        }
         let palette = Palette::new(colors, accent_idx);
         if let Ok(scheme) = ColorScheme::try_from(scheme_id) {
             Ok(dither_with_canonical(&img, &palette, scheme.palette(), config))
