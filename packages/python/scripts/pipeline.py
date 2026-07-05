@@ -29,12 +29,11 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-import numpy as np
-from PIL import Image, ImageDraw, ImageFont
-
 import epaper_dithering as _lib
 import epaper_dithering._rs as _rs
+import numpy as np
 from epaper_dithering import DitherMode
+from PIL import Image, ImageDraw, ImageFont
 
 # ── Color-space helpers (self-contained; the Rust core owns the canonical math) ──
 
@@ -66,6 +65,7 @@ def rgb_to_lab(px: np.ndarray) -> np.ndarray:
     flat = np.ascontiguousarray(px, dtype=np.float64).reshape(-1).tolist()
     out = _rs.rgb_to_oklab_buffer(flat)
     return np.array(out, dtype=np.float64).reshape(px.shape)
+
 
 # ── Layout constants ──────────────────────────────────────────────────────────
 WIDTH, HEIGHT = 800, 480
