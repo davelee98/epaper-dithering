@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+### Bug Fixes
+
+* Inherits the core dithering-correctness fixes (brightness-neutral ordered dither,
+  grayscale threshold scaling, tone-mapping clamps, perceptual shadows/highlights pivot)
+  via a rebuilt WASM core.
+* `ditherImage` now throws a clear error when a measured palette's `accent` name is not one
+  of its colors, instead of passing an invalid index into WASM and aborting.
+
 ## [2.2.1](https://github.com/OpenDisplay/epaper-dithering/compare/javascript-v2.2.0...javascript-v2.2.1) (2026-03-12)
 
 

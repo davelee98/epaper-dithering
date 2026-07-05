@@ -92,6 +92,11 @@ export function ditherImage(
     const colors = Object.values(palette.colors);
     paletteBytes = new Uint8Array(colors.flatMap(c => [c.r, c.g, c.b]));
     accentIdx = Object.keys(palette.colors).indexOf(palette.accent);
+    if (accentIdx < 0) {
+      throw new Error(
+        `accent color '${palette.accent}' not found in palette colors [${Object.keys(palette.colors).join(', ')}]`,
+      );
+    }
     outputColors = colors;
   }
 
