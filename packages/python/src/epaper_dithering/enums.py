@@ -11,6 +11,11 @@ class DitherMode(IntEnum):
     Values are compatible with OpenDisplay firmware conventions.
     """
 
+    #: Direct nearest-color mapping with no error diffusion. Intended for
+    #: already-quantized graphics only. On limited palettes (especially BWR),
+    #: continuous-tone photos or large flat mid-tone areas can map to an
+    #: unexpected ink (e.g. a mid-gray region rendered as solid red); use an
+    #: error-diffusion mode (e.g. FLOYD_STEINBERG, BURKES) for photographic input.
     NONE = 0
     BURKES = 1
     ORDERED = 2

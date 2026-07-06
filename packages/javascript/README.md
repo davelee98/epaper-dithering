@@ -127,7 +127,7 @@ ditherImage(image: ImageBuffer, palette: ColorScheme | ColorPalette, options?: D
 
 Pre-processing pipeline: `exposure → saturation → shadows/highlights → tone → gamut → dither`. Each step is a no-op at its identity value.
 
-`DitherMode.NONE` performs direct nearest-color mapping without error diffusion or ordered dithering. Built-in measured palettes carry their canonical firmware `scheme`, so pure display colors map to the corresponding firmware palette index even when measured RGB values are used for matching.
+`DitherMode.NONE` performs direct nearest-color mapping without error diffusion or ordered dithering. It is intended for already-quantized graphics, not continuous-tone photos: because there is no error diffusion, on limited palettes (especially BWR) a continuous-tone image or a large flat mid-tone area can map to an unexpected ink — for example, a solid mid-gray region can render as solid red. Use an error-diffusion mode (e.g. `FLOYD_STEINBERG`, `BURKES`) for photographic input. Built-in measured palettes carry their canonical firmware `scheme`, so pure display colors map to the corresponding firmware palette index even when measured RGB values are used for matching.
 
 For built-in measured palettes, exact canonical display colors are also protected in ordered and error-diffusion modes when pre-processing is off: an image made entirely of display colors is returned as a direct palette-index map, and exact display-color pixels inside a mixed image keep their canonical index instead of being rematched to the measured RGB palette. Pre-processing runs before that exact-pixel check, so explicit `tone: 'auto'`, `gamut: 'auto'`, or other adjustments may intentionally alter those pixels first.
 
