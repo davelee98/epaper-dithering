@@ -9,6 +9,11 @@ use crate::tone_map;
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum DitherMode {
+    /// Direct nearest-color mapping with no error diffusion. Intended for
+    /// already-quantized graphics only. On limited palettes (especially BWR),
+    /// continuous-tone photos or large flat mid-tone areas can map to an
+    /// unexpected ink (e.g. a mid-gray region rendered as solid red); use an
+    /// error-diffusion mode (e.g. `FloydSteinberg`, `Burkes`) for photographic input.
     None           = 0,
     #[default]
     Burkes         = 1,
