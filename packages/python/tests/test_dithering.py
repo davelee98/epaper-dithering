@@ -262,3 +262,37 @@ class TestToneCompression:
         assert not np.array_equal(np.array(result_off), np.array(result_on)), (
             "Tone compression should produce different output than no compression"
         )
+
+
+class TestToneAutoRegression:
+    """Regression: auto tone mapping must not NaN-collapse bilevel images.
+
+    A crisp bilevel frame (pure-white background, a few percent pure-black
+    pixels, no antialiasing — exactly what a UI renderer produces) drove the
+    log-skew strength epsilon-negative; (-x).powf(1.4) is NaN, which poisoned
+    every pixel and made the nearest-palette search return index 0 for the
+    whole frame: an all-black display instead of white with text.
+    """
+
+    def test_bilevel_white_image_survives_auto_tone(self):
+        from epaper_dithering import ColorPalette
+
+        # Measured-style palette whose paper white is well below sRGB white, so
+        # the auto tone compression actually engages for a pure-white image.
+        palette = ColorPalette(
+            colors={"black": (30, 30, 30), "white": (200, 200, 200)},
+            accent="black",
+            scheme=ColorScheme.MONO,
+        )
+        img = Image.new("RGB", (100, 100), (255, 255, 255))
+        # 3% pure black — enough that the 2nd-percentile luminance is 0.0.
+        for x in range(100):
+            for y in range(3):
+                img.putpixel((x, y), (0, 0, 0))
+
+        result = dither_image(img, palette, mode=DitherMode.NONE, tone="auto")
+
+        white_pixels = list(result.getdata()).count(1)
+        assert white_pixels > 9000, (
+            f"expected a mostly-white result, got {white_pixels} white pixels — auto tone collapsed the frame"
+        )
