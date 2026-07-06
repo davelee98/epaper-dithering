@@ -1,5 +1,12 @@
 # Changelog
 
+## [5.0.9](https://github.com/OpenDisplay/epaper-dithering/compare/epaper-dithering-v5.0.8...epaper-dithering-v5.0.9) (2026-07-06)
+
+
+### Documentation
+
+* clarify DitherMode::None is for pre-quantized graphics, not photos ([f1c3ec5](https://github.com/OpenDisplay/epaper-dithering/commit/f1c3ec56fde94a6f6f96cd5816dce8ae7188c407))
+
 ## [5.0.8](https://github.com/OpenDisplay/epaper-dithering/compare/epaper-dithering-v5.0.7...epaper-dithering-v5.0.8) (2026-07-06)
 
 
