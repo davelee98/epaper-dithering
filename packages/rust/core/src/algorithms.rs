@@ -499,7 +499,7 @@ mod tests {
     /// in the mid-tone region and assert the max/min ratio stays modest. Empirically the
     /// linear-space implementation produces ratio ≈ 13.5; sRGB-space ≈ 2.2.
     ///
-    /// The mono decision midpoint sits at OKLab L=0.5 ≈ sRGB 188, so the top two bands
+    /// The mono decision midpoint sits at OKLab L=0.5 ≈ sRGB 100, so the top two bands
     /// (sRGB ≳ 192) are already in the highlight roll-off where dither activity legitimately
     /// tapers; we exclude them along with the pure-black first band.
     #[test]
@@ -530,7 +530,7 @@ mod tests {
         }
 
         // Mid-tone bands: skip the pure-black first band and the top two near-white bands
-        // (past the mono midpoint ≈ sRGB 188) where the threshold clamps and dither
+        // (past the mono midpoint ≈ sRGB 100) where the threshold clamps and dither
         // activity legitimately falls off.
         let mid = &transitions[1..BANDS - 2];
         let max = *mid.iter().max().unwrap();
