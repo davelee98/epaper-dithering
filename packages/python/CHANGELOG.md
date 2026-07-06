@@ -1,19 +1,5 @@
 # Changelog
 
-## Unreleased
-
-### Bug Fixes
-
-* Inherits the core dithering-correctness fixes: brightness-neutral ordered dither,
-  grayscale threshold scaling, auto tone-mapping clamps, and the perceptual
-  shadows/highlights pivot.
-* Validate image dimensions and `accent_idx` at the FFI boundary, returning `ValueError`
-  instead of panicking the Rust extension on malformed input.
-
-### Other
-
-* Expose `tone_compress`, `gamut_compress`, and `rgb_to_oklab_buffer` on the `_rs` module
-  for tooling, and repair `scripts/pipeline.py` to the current API.
 ## [5.0.8](https://github.com/OpenDisplay/epaper-dithering/compare/epaper-dithering-v5.0.7...epaper-dithering-v5.0.8) (2026-07-06)
 
 
