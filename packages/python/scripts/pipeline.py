@@ -30,18 +30,42 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 import epaper_dithering as _lib
+import epaper_dithering._rs as _rs
 import numpy as np
 from epaper_dithering import DitherMode
-from epaper_dithering.algorithms import get_palette_colors
-from epaper_dithering.color_space import linear_to_srgb, srgb_to_linear
-from epaper_dithering.color_space_lab import rgb_to_lab
-from epaper_dithering.tone_map import (
-    auto_compress_dynamic_range,
-    auto_gamut_compress,
-    compress_dynamic_range,
-    gamut_compress,
-)
 from PIL import Image, ImageDraw, ImageFont
+
+# ── Color-space helpers (self-contained; the Rust core owns the canonical math) ──
+
+
+def srgb_to_linear(a: np.ndarray) -> np.ndarray:
+    """sRGB [0, 255] → linear [0, 1] (IEC 61966-2-1)."""
+    x = a.astype(np.float64) / 255.0
+    return np.where(x <= 0.04045, x / 12.92, ((x + 0.055) / 1.055) ** 2.4)
+
+
+def linear_to_srgb(a: np.ndarray) -> np.ndarray:
+    """Linear [0, 1] → sRGB uint8 [0, 255]."""
+    x = np.clip(a, 0.0, 1.0)
+    s = np.where(x <= 0.0031308, x * 12.92, 1.055 * x ** (1.0 / 2.4) - 0.055)
+    return np.clip(s * 255.0, 0, 255).astype(np.uint8)
+
+
+def get_palette_colors(palette: _lib.ColorPalette) -> list[tuple[int, int, int]]:
+    """Ordered sRGB colors of a measured palette."""
+    return list(palette.colors.values())
+
+
+def _palette_bytes(palette: _lib.ColorPalette) -> bytes:
+    return bytes(c for rgb in get_palette_colors(palette) for c in rgb)
+
+
+def rgb_to_lab(px: np.ndarray) -> np.ndarray:
+    """Linear-RGB (H, W, 3) → OKLab (H, W, 3) via the Rust core."""
+    flat = np.ascontiguousarray(px, dtype=np.float64).reshape(-1).tolist()
+    out = _rs.rgb_to_oklab_buffer(flat)
+    return np.array(out, dtype=np.float64).reshape(px.shape)
+
 
 # ── Layout constants ──────────────────────────────────────────────────────────
 WIDTH, HEIGHT = 800, 480
@@ -152,25 +176,30 @@ def gamut_heatmap(before: np.ndarray, after: np.ndarray) -> Image.Image:
     return Image.fromarray(rgb, "RGB")
 
 
-def apply_tc(pixels_linear: np.ndarray, palette_linear: np.ndarray, tc: float | str) -> tuple[np.ndarray, str]:
+def _run_step(fn, pixels_linear: np.ndarray, palette_bytes: bytes, strength: float | None) -> np.ndarray:
+    flat = np.ascontiguousarray(pixels_linear, dtype=np.float64).reshape(-1).tolist()
+    out = fn(flat, palette_bytes, strength)
+    return np.array(out, dtype=np.float64).reshape(pixels_linear.shape)
+
+
+def apply_tc(pixels_linear: np.ndarray, palette_bytes: bytes, tc: float | str) -> tuple[np.ndarray, str]:
     if tc == 0.0:
         return pixels_linear, "disabled"
+    strength = None if tc == "auto" else float(tc)
+    result = _run_step(_rs.tone_compress, pixels_linear, palette_bytes, strength)
     if tc == "auto":
-        result = auto_compress_dynamic_range(pixels_linear.copy(), palette_linear)
-        changed = not np.array_equal(result, pixels_linear)
+        changed = not np.allclose(result, pixels_linear)
         return result, "applied" if changed else "SKIPPED (image fits display range)"
-    result = compress_dynamic_range(pixels_linear.copy(), palette_linear, float(tc))
     return result, f"strength={tc:.2g}"
 
 
-def apply_gc(pixels_linear: np.ndarray, palette_linear: np.ndarray, gc: float | str) -> tuple[np.ndarray, str]:
+def apply_gc(pixels_linear: np.ndarray, palette_bytes: bytes, gc: float | str) -> tuple[np.ndarray, str]:
     if gc == 0.0:
         return pixels_linear, "disabled"
-    if gc == "auto":
-        result = auto_gamut_compress(pixels_linear.copy(), palette_linear)
-        return result, "auto"
-    result = gamut_compress(pixels_linear.copy(), palette_linear, float(gc))
-    return result, f"strength={gc:.2g}"
+    # gamut_compress: None → full strength (auto), else fixed strength.
+    strength = None if gc == "auto" else float(gc)
+    result = _run_step(_rs.gamut_compress, pixels_linear, palette_bytes, strength)
+    return result, "auto" if gc == "auto" else f"strength={gc:.2g}"
 
 
 # ── Main per-image function ───────────────────────────────────────────────────
@@ -189,7 +218,8 @@ def run(
     font = load_font(13)
 
     palette_srgb = get_palette_colors(palette)
-    palette_linear = srgb_to_linear(np.array(palette_srgb, dtype=np.float32))
+    palette_bytes = _palette_bytes(palette)
+    palette_linear = srgb_to_linear(np.array(palette_srgb, dtype=np.float64))
     black_Y = float(_WR * palette_linear[0, 0] + _WG * palette_linear[0, 1] + _WB * palette_linear[0, 2])
     white_Y = float(_WR * palette_linear[1, 0] + _WG * palette_linear[1, 1] + _WB * palette_linear[1, 2])
 
@@ -209,7 +239,7 @@ def run(
     )
 
     # ── Step 3: Tone compression ───────────────────────────────────────────────
-    pixels_tc, tc_note = apply_tc(pixels_linear, palette_linear, tc)
+    pixels_tc, tc_note = apply_tc(pixels_linear, palette_bytes, tc)
     Y3 = lum(pixels_tc)
     p2_3, p98_3 = float(np.percentile(Y3, 2)), float(np.percentile(Y3, 98))
     panel3 = with_histogram(to_pil(pixels_tc), Y3, black_Y, white_Y, font)
@@ -220,7 +250,7 @@ def run(
     )
 
     # ── Step 4: Gamut compression ─────────────────────────────────────────────
-    pixels_gc, gc_note = apply_gc(pixels_tc, palette_linear, gc)
+    pixels_gc, gc_note = apply_gc(pixels_tc, palette_bytes, gc)
     n_moved = int(np.sum(np.any(np.abs(pixels_gc - pixels_tc) > 1e-5, axis=-1)))
     pct_moved = 100.0 * n_moved / (WIDTH * HEIGHT)
 
