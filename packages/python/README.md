@@ -182,7 +182,7 @@ result = dither_image(img, SPECTRA_7_3_6COLOR, mode=DitherMode.BURKES, gamut="of
 
 Note: `gamut` also has no effect for theoretical `ColorScheme` palettes.
 
-`DitherMode.NONE` performs direct nearest-color mapping without error diffusion or ordered dithering. For built-in measured palettes, pure canonical display colors such as `(255, 0, 0)` map directly to the corresponding firmware palette index even though matching uses measured display RGB values.
+`DitherMode.NONE` performs direct nearest-color mapping without error diffusion or ordered dithering. It is intended for already-quantized graphics, not continuous-tone photos: because there is no error diffusion, on limited palettes (especially BWR) a continuous-tone image or a large flat mid-tone area can map to an unexpected ink — for example, a solid mid-gray region can render as solid red. Use an error-diffusion mode (e.g. `FLOYD_STEINBERG`, `BURKES`) for photographic input. For built-in measured palettes, pure canonical display colors such as `(255, 0, 0)` map directly to the corresponding firmware palette index even though matching uses measured display RGB values.
 
 For built-in measured palettes, exact canonical display colors are also protected in ordered and error-diffusion modes when pre-processing is off: an image made entirely of display colors is returned as a direct palette-index map, and exact display-color pixels inside a mixed image keep their canonical index instead of being rematched to the measured RGB palette. Pre-processing runs before that exact-pixel check, so explicit `tone="auto"`/`gamut="auto"` or other adjustments may intentionally alter those pixels first.
 

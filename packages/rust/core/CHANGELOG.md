@@ -27,6 +27,17 @@
 * **ordered dither:** precompute a per-threshold gamma LUT, removing three `powf` calls per
   pixel (~13% faster); output is byte-identical.
 * **gamut:** hoist the O(n²) palette-edge geometry out of the per-pixel loop.
+## [4.0.1](https://github.com/OpenDisplay/epaper-dithering/compare/epaper-dithering-core-v4.0.0...epaper-dithering-core-v4.0.1) (2026-07-05)
+
+
+### Bug Fixes
+
+* **dither:** correct ordered-dither brightness, palette scaling, and tone-map edge cases ([6765760](https://github.com/OpenDisplay/epaper-dithering/commit/676576051fd3581df53ddcae8ee3f892a4133ba3))
+
+
+### Performance Improvements
+
+* **dither:** eliminate per-pixel powf in ordered dither; hoist gamut edges ([bafc435](https://github.com/OpenDisplay/epaper-dithering/commit/bafc435fbb4bd3c38af39d573fdd4392c01e86ff))
 
 ## [4.0.0](https://github.com/OpenDisplay/epaper-dithering/compare/epaper-dithering-core-v3.0.0...epaper-dithering-core-v4.0.0) (2026-05-21)
 

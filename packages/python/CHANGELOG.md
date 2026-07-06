@@ -14,6 +14,13 @@
 
 * Expose `tone_compress`, `gamut_compress`, and `rgb_to_oklab_buffer` on the `_rs` module
   for tooling, and repair `scripts/pipeline.py` to the current API.
+## [5.0.8](https://github.com/OpenDisplay/epaper-dithering/compare/epaper-dithering-v5.0.7...epaper-dithering-v5.0.8) (2026-07-06)
+
+
+### Bug Fixes
+
+* **python:** ship the core tone-map NaN fix in the wheel ([296b939](https://github.com/OpenDisplay/epaper-dithering/commit/296b939cf127a77c69bb1821f4377360cabc5f06))
+* **python:** ship the core tone-map NaN fix in the wheel ([3310c84](https://github.com/OpenDisplay/epaper-dithering/commit/3310c84b96fe31b7ef3340a2b622725c4d5247b9))
 
 ## [5.0.7](https://github.com/OpenDisplay/epaper-dithering/compare/epaper-dithering-v5.0.6...epaper-dithering-v5.0.7) (2026-06-29)
 
