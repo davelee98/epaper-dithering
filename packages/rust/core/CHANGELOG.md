@@ -1,5 +1,32 @@
 # Changelog
 
+## Unreleased
+
+### Bug Fixes
+
+* **ordered dither:** use the standard zero-mean Bayer normalization `((v+0.5)/16 − 0.5)`.
+  The previous matrix had mean −1/32 and darkened every ordered-dithered image by ~8/255.
+* **ordered dither:** scale the threshold amplitude to the palette's quantization step for
+  grayscale palettes (`1/(levels−1)`) so dense ramps (GRAYSCALE_16) are no longer swamped
+  by full-range dither noise; mono/color palettes are unchanged.
+* **tone:** clamp the auto dynamic-range remap to `[0, 1]` so percentile outliers saturate
+  at the display black/white points instead of extrapolating past them (dark outliers were
+  crushed to pure black).
+* **tone:** honor `strength` and preserve chroma for near-black pixels in the auto compressor;
+  clamp skewness before `powf` to avoid a NaN that could poison every output pixel on
+  high-key images.
+* **tone:** pivot the shadows/highlights S-curve at perceptual mid-gray (gamma space) rather
+  than linear 0.5 (≈ sRGB 188), and clamp the strength inputs to `[0, 1]`.
+* **types:** `ImageBuffer::new` now validates dimensions (panics on zero width / ragged
+  buffer) instead of silently truncating in release builds.
+
+### Performance
+
+* Fold the sRGB→XYZ→LMS conversion into Ottosson's single combined matrix (and matching
+  inverse), halving the per-pixel matrix work in OKLab conversion.
+* **ordered dither:** precompute a per-threshold gamma LUT, removing three `powf` calls per
+  pixel (~13% faster); output is byte-identical.
+* **gamut:** hoist the O(n²) palette-edge geometry out of the per-pixel loop.
 ## [4.0.1](https://github.com/OpenDisplay/epaper-dithering/compare/epaper-dithering-core-v4.0.0...epaper-dithering-core-v4.0.1) (2026-07-05)
 
 

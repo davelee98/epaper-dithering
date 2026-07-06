@@ -115,6 +115,23 @@ Normalized: (102 x 1.186, 8 x 1.175, 0 x 1.170)
 
 Round to the nearest integer. Clamp to [0, 255] if any value exceeds the range.
 
+> [!IMPORTANT]
+> **Palette values must be sRGB-encoded (gamma), not linear-light.**
+> The library decodes every palette color with the sRGB→linear transfer function before
+> matching, so it expects standard gamma-encoded RGB — the same space a normal JPEG/PNG
+> eyedropper reports. If you sampled from a **linear** workflow (e.g. a DNG developed with
+> a *linear* tone curve, as in the SPECTRA v2 measurement), your normalized numbers are
+> linear-light and must be gamma-encoded before you use them, or every color will read
+> too dark. Apply the sRGB OETF per channel to each normalized value `c` in `[0, 1]`:
+>
+> ```
+> encoded = 12.92 · c                        if c ≤ 0.0031308
+>           1.055 · c^(1/2.4) − 0.055         otherwise
+> ```
+>
+> then scale by 255. Standard photo editors (Photoshop/GIMP eyedropper on an sRGB export)
+> already report gamma-encoded values, so no extra step is needed there.
+
 ## Step 6: Create Your ColorPalette
 
 Use the normalized values to create a `ColorPalette`:

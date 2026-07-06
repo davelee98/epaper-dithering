@@ -18,10 +18,10 @@ const M2: [[f64; 3]; 3] = [
 
 /// Chromatic-axes weight for `match_pixel_oklab`.
 ///
-/// Empirically validated by `examples/wab_sweep.rs` against the regression fixture set
-/// (Burkes + Spectra 6-color, mean OKLab ΔE on 4×4-block-averaged outputs). 1.5 is a
-/// conservative choice that improves saturated subjects without over-saturating neutrals;
-/// see GitHub issue #28 for the methodology and justification.
+/// Empirically validated by sweeping `wab` against the regression fixture set (Burkes +
+/// Spectra 6-color, mean OKLab ΔE on 4×4-block-averaged outputs). 1.5 is a conservative
+/// choice that improves saturated subjects without over-saturating neutrals; see GitHub
+/// issue #28 for the methodology and justification.
 pub const WAB: f64 = 1.5;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
