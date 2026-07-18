@@ -14,3 +14,11 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 
 [dependencies]
 epaper-dithering-core = { path = "../core" }
+
+# The XCFramework is vendored into the app repo (git), so keep the static archives lean:
+# strip DWARF debug info (globals like ed_dither are retained for linking) and LTO the core in.
+# panic = "unwind" is REQUIRED — the FFI relies on catch_unwind, so do not set panic = "abort".
+[profile.release]
+lto = true
+codegen-units = 1
+strip = "debuginfo"

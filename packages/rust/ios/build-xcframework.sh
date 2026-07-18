@@ -33,6 +33,13 @@ for t in "${DEVICE_TARGET}" "${SIM_TARGETS[@]}"; do
   cargo build --release --manifest-path "${CRATE_DIR}/Cargo.toml" --target "$t"
 done
 
+# Strip debug (-S) and local (-x) symbols from each static archive. The exported globals
+# (ed_dither / ed_abi_version) are retained for linking; this ~cuts the vendored size by a third.
+echo "==> Stripping static archives"
+for t in "${DEVICE_TARGET}" "${SIM_TARGETS[@]}"; do
+  strip -S -x "${CRATE_DIR}/target/${t}/release/${LIB_NAME}"
+done
+
 # The ios crate is workspace-excluded, so it is its own workspace root and cargo writes
 # its target dir local to the crate.
 TARGET_ROOT="${CRATE_DIR}/target"
