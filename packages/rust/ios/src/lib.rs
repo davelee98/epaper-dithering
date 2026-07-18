@@ -62,7 +62,7 @@ fn build_palette(ptr: *const u8, len: usize, accent_idx: usize) -> Result<Option
     if ptr.is_null() {
         return Err(ED_ERR_NULL_POINTER);
     }
-    if len % 3 != 0 {
+    if !len.is_multiple_of(3) {
         return Err(ED_ERR_BAD_PALETTE);
     }
     // SAFETY: caller guarantees `ptr` is valid for `len` bytes; checked non-null above.
@@ -119,7 +119,7 @@ pub unsafe extern "C" fn ed_dither(
         if width == 0 {
             return ED_ERR_BAD_WIDTH;
         }
-        if pixels_len % 3 != 0 || (pixels_len / 3) % width != 0 {
+        if !pixels_len.is_multiple_of(3) || !(pixels_len / 3).is_multiple_of(width) {
             return ED_ERR_BAD_PIXELS;
         }
         let pixel_count = pixels_len / 3;
